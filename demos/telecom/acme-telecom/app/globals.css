@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+:root {
+  --acme: #1e3a5f;
+}
