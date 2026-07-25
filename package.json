@@ -1,0 +1,16 @@
+{
+  "name": "agentic-internet-lab",
+  "private": true,
+  "description": "Reference implementations and demos for the agentic-internet idea",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}
