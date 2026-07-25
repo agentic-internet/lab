@@ -87,6 +87,28 @@ export async function discover(
   return { manifest, capabilities };
 }
 
+/**
+ * Invoke a discovered capability against the org's agent endpoint.
+ * The manifest's agent_endpoint is where capability calls are POSTed.
+ */
+export async function callCapability(
+  agentEndpoint: string,
+  capabilityId: string,
+  input: Record<string, unknown>,
+  opts: { onEvent?: OnEvent } = {},
+): Promise<{ status: number; body: unknown }> {
+  const emit = opts.onEvent ?? (() => {});
+  emit({ step: "note", message: `call ${capabilityId} → ${agentEndpoint}` });
+  const res = await fetch(agentEndpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ capability: capabilityId, input }),
+  });
+  const body = await res.json().catch(() => ({}));
+  emit({ step: "note", message: `← ${res.status} ${JSON.stringify(body)}` });
+  return { status: res.status, body };
+}
+
 /** Rough meaning-based match: does this capability fit what the caller wants? */
 export function matchCapability(
   capabilities: Capability[],

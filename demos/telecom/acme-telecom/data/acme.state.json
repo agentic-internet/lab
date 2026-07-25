@@ -1,0 +1,46 @@
+{
+  "tariffs": [
+    {
+      "id": "starter",
+      "name": "Starter",
+      "data_gb": 10,
+      "price_usd": 15,
+      "tier": 1
+    },
+    {
+      "id": "standard",
+      "name": "Standard",
+      "data_gb": 30,
+      "price_usd": 25,
+      "tier": 2
+    },
+    {
+      "id": "pro",
+      "name": "Pro",
+      "data_gb": 100,
+      "price_usd": 40,
+      "tier": 3
+    },
+    {
+      "id": "unlimited",
+      "name": "Unlimited",
+      "data_gb": null,
+      "price_usd": 60,
+      "tier": 4
+    },
+    {
+      "id": "ultra-5",
+      "name": "Ultra 5",
+      "data_gb": null,
+      "price_usd": 80,
+      "tier": 5
+    }
+  ],
+  "lines": [
+    {
+      "line_id": "GLX-4471",
+      "subscriber": "Globex Marketing",
+      "tariff_id": "unlimited"
+    }
+  ]
+}
