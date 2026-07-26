@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { anthropicProvider, deepseekProvider, type LLMProvider } from "@ail/agent-core";
+import { anthropicProvider, deepseekProvider, openaiProvider, geminiProvider, type LLMProvider } from "@ail/agent-core";
 
 /**
  * Demo control settings — only the operator (us) touches these, via /control.
@@ -13,7 +13,7 @@ export interface Settings {
   /** How a ticket is resolved — the demo-wide behaviour, set in Admin. */
   flow: "agent-to-agent" | "agent-to-human";
   mode: "deterministic" | "live";
-  provider: "anthropic" | "deepseek";
+  provider: "anthropic" | "openai" | "gemini" | "deepseek";
   model: string;
   dailyCap: number;
   usedToday: number;
@@ -30,9 +30,9 @@ function today(): string {
 function defaults(): Settings {
   return {
     flow: "agent-to-agent",
-    mode: "deterministic",
+    mode: "live",
     provider: "anthropic",
-    model: "claude-sonnet-5",
+    model: "claude-haiku-4-5",
     dailyCap: 50,
     usedToday: 0,
     date: today(),
@@ -78,6 +78,8 @@ export function publicSettings() {
     usedToday: s.usedToday,
     keys: {
       anthropic: Boolean(process.env.ANTHROPIC_API_KEY),
+      openai: Boolean(process.env.OPENAI_API_KEY),
+      gemini: Boolean(process.env.GEMINI_API_KEY),
       deepseek: Boolean(process.env.DEEPSEEK_API_KEY),
     },
   };
@@ -91,12 +93,19 @@ export function publicSettings() {
 export function pickProvider(): { provider?: LLMProvider; note?: string } {
   const s = getSettings();
   if (s.mode === "deterministic") return {};
-  if (s.provider === "anthropic") {
-    if (!process.env.ANTHROPIC_API_KEY) return { note: "live requested but ANTHROPIC_API_KEY missing — using deterministic" };
-    return { provider: anthropicProvider({ model: s.model }) };
+  const missing = (name: string) => ({ note: `live requested but ${name} missing — using deterministic` });
+  switch (s.provider) {
+    case "anthropic":
+      return process.env.ANTHROPIC_API_KEY ? { provider: anthropicProvider({ model: s.model }) } : missing("ANTHROPIC_API_KEY");
+    case "openai":
+      return process.env.OPENAI_API_KEY ? { provider: openaiProvider({ model: s.model }) } : missing("OPENAI_API_KEY");
+    case "gemini":
+      return process.env.GEMINI_API_KEY ? { provider: geminiProvider({ model: s.model }) } : missing("GEMINI_API_KEY");
+    case "deepseek":
+      return process.env.DEEPSEEK_API_KEY ? { provider: deepseekProvider({ model: s.model }) } : missing("DEEPSEEK_API_KEY");
+    default:
+      return {};
   }
-  if (!process.env.DEEPSEEK_API_KEY) return { note: "live requested but DEEPSEEK_API_KEY missing — using deterministic" };
-  return { provider: deepseekProvider({ model: s.model }) };
 }
 
 /** Rate-limit only matters when we're spending on a real model. */

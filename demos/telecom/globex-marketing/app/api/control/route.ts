@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   const allowed: Partial<Settings> = {};
   if (patch.flow === "agent-to-agent" || patch.flow === "agent-to-human") allowed.flow = patch.flow;
   if (patch.mode === "deterministic" || patch.mode === "live") allowed.mode = patch.mode;
-  if (patch.provider === "anthropic" || patch.provider === "deepseek") allowed.provider = patch.provider;
+  if (["anthropic", "openai", "gemini", "deepseek"].includes(patch.provider as string)) allowed.provider = patch.provider;
   if (typeof patch.model === "string") allowed.model = patch.model;
   if (typeof patch.dailyCap === "number") allowed.dailyCap = Math.max(0, Math.floor(patch.dailyCap));
   updateSettings(allowed);

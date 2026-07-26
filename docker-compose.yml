@@ -23,6 +23,8 @@ services:
       - NEXT_PUBLIC_ACME_URL=https://acme-telecom.salginci.com
       - CONTROL_PASSWORD=${CONTROL_PASSWORD:-demo}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
     expose:
       - "3002"

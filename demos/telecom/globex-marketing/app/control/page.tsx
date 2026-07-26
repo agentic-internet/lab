@@ -2,19 +2,30 @@
 
 import { useState } from "react";
 
+type Provider = "anthropic" | "openai" | "gemini" | "deepseek";
+
 interface View {
   flow: "agent-to-agent" | "agent-to-human";
   mode: "deterministic" | "live";
-  provider: "anthropic" | "deepseek";
+  provider: Provider;
   model: string;
   dailyCap: number;
   usedToday: number;
-  keys: { anthropic: boolean; deepseek: boolean };
+  keys: Record<Provider, boolean>;
 }
 
-const MODELS: Record<string, string[]> = {
-  anthropic: ["claude-sonnet-5", "claude-haiku-4-5", "claude-opus-4-8"],
+const MODELS: Record<Provider, string[]> = {
+  anthropic: ["claude-haiku-4-5", "claude-sonnet-5", "claude-opus-4-8"],
+  openai: ["gpt-4o-mini", "gpt-4o"],
+  gemini: ["gemini-2.0-flash", "gemini-1.5-pro"],
   deepseek: ["deepseek-chat", "deepseek-reasoner"],
+};
+
+const PROVIDER_LABEL: Record<Provider, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  gemini: "Gemini",
+  deepseek: "DeepSeek",
 };
 
 export default function Control() {
@@ -113,13 +124,12 @@ export default function Control() {
 
         <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">Provider</label>
-          <div className="mt-2 inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
-            <Toggle on={view.provider === "anthropic"} onClick={() => patch({ provider: "anthropic", model: MODELS.anthropic[0] })}>
-              Anthropic {view.keys.anthropic ? "✓" : "· no key"}
-            </Toggle>
-            <Toggle on={view.provider === "deepseek"} onClick={() => patch({ provider: "deepseek", model: MODELS.deepseek[0] })}>
-              DeepSeek {view.keys.deepseek ? "✓" : "· no key"}
-            </Toggle>
+          <div className="mt-2 flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-white p-0.5">
+            {(Object.keys(PROVIDER_LABEL) as Provider[]).map((p) => (
+              <Toggle key={p} on={view.provider === p} onClick={() => patch({ provider: p, model: MODELS[p][0] })}>
+                {PROVIDER_LABEL[p]} {view.keys[p] ? "✓" : "· no key"}
+              </Toggle>
+            ))}
           </div>
         </div>
 
