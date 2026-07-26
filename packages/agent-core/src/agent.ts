@@ -13,11 +13,20 @@ export async function runAgent(opts: {
   system: string;
   tools: ToolDef[];
   message: string;
+  /** Prior conversation turns (text only), so the agent has continuity. */
+  history?: { role: "user" | "assistant"; text: string }[];
   onEvent?: OnAgentEvent;
   maxSteps?: number;
 }): Promise<string> {
   const emit = opts.onEvent ?? (() => {});
-  const messages: Msg[] = [{ role: "user", content: opts.message }];
+  const messages: Msg[] = [
+    ...(opts.history ?? []).map((h) =>
+      h.role === "user"
+        ? ({ role: "user", content: h.text } as const)
+        : ({ role: "assistant", content: h.text } as const),
+    ),
+    { role: "user", content: opts.message },
+  ];
   emit({ type: "user", text: opts.message });
 
   const maxSteps = opts.maxSteps ?? 10;

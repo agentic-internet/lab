@@ -31,15 +31,35 @@ export function buildGlobexServer(): McpServer {
   server.registerTool(
     "lookup_line",
     {
-      title: "Look up a subscriber's mobile line",
+      title: "Look up an employee's mobile line and current plan",
       description:
-        "Return the line id, current operator, and operator domain for a Globex team or employee.",
+        "Return the line id, operator, operator domain, and the current package (data, minutes, " +
+        "price) for a Globex employee. Use this to answer questions about someone's current plan.",
       inputSchema: { subscriber: z.string() },
     },
     async ({ subscriber }) => {
       const rec = DIRECTORY[subscriber];
-      const text = rec ? JSON.stringify(rec) : JSON.stringify({ error: "unknown subscriber" });
-      return { content: [{ type: "text" as const, text }] };
+      if (!rec) {
+        return { content: [{ type: "text" as const, text: JSON.stringify({ error: "unknown subscriber" }) }] };
+      }
+      // Enrich with the live current package from the operator's customer API —
+      // Globex is the account holder, so this is its own account data.
+      let current: unknown = null;
+      try {
+        const data = (await fetch(`${rec.operator_domain}/admin/api/lines`, { cache: "no-store" }).then((r) =>
+          r.json(),
+        )) as { lines?: { line_id: string; tariff_id: string; tariff_name?: string }[]; tariffs?: { id: string; name: string; data_gb: number; mins: number; price_usd: number }[] };
+        const line = (data.lines ?? []).find((l) => l.line_id === rec.line_id);
+        const tariff = (data.tariffs ?? []).find((t) => t.id === line?.tariff_id);
+        if (tariff) {
+          current = { tariff: tariff.name, data_gb: tariff.data_gb, mins: tariff.mins, price_usd: tariff.price_usd };
+        } else if (line?.tariff_name) {
+          current = { tariff: line.tariff_name };
+        }
+      } catch {
+        // operator API unreachable — return the line without the live plan
+      }
+      return { content: [{ type: "text" as const, text: JSON.stringify({ ...rec, current }) }] };
     },
   );
 

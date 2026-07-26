@@ -31,39 +31,62 @@ function agentEvents(onLog: OnLog) {
 
 /* ---------------------------------------------------------------- intake --- */
 
+interface LinePlan {
+  line_id: string;
+  operator_name: string;
+  operator_domain: string;
+  current?: { tariff: string; data_gb?: number; mins?: number; price_usd?: number } | null;
+}
+
+/** Rough intent read for the deterministic script: is the user asking to act? */
+function wantsUpgrade(text: string): boolean {
+  return (
+    /\b(upgrade|increase|bigger|more data|change|switch|raise|bump|yes|yeah|yep|sure|ok|okay|go ahead|proceed|do it|please)\b/i.test(text) ||
+    /(yüksel|art[ıi]r|değiştir|evet|olur|tamam|yap)/i.test(text)
+  );
+}
+
 export async function runIntake(opts: {
   subscriber: string;
   message: string;
+  history?: { role: "user" | "assistant"; text: string }[];
   onLog: OnLog;
   provider?: LLMProvider;
 }): Promise<Ticket | undefined> {
   const { subscriber, message, onLog } = opts;
   const mcp = await connectGlobexMcp();
-  const s: { line?: { line_id: string; operator_name: string; operator_domain: string }; ticket?: Ticket } = {};
+  const s: { line?: LinePlan; ticket?: Ticket } = {};
+
+  async function lookup(): Promise<LinePlan> {
+    onLog({ channel: "mcp", text: `call lookup_line({"subscriber":"${subscriber}"})` });
+    const rec = (await mcpCallJson(mcp, "lookup_line", { subscriber })) as LinePlan;
+    onLog({ channel: "mcp", text: `response ${JSON.stringify(rec)}`, data: rec });
+    s.line = rec;
+    return rec;
+  }
 
   const tools: ToolDef[] = [
     {
       name: "lookup_line",
-      description: "Find the employee's mobile line and current operator.",
+      description:
+        "Look up the employee's mobile line, operator, and current package (data, minutes, price). " +
+        "Use this to answer questions about their current plan before doing anything.",
       input: { subscriber: { type: "string", required: true } },
-      run: async (args) => {
-        onLog({ channel: "mcp", text: `call lookup_line(${JSON.stringify(args)})` });
-        const rec = (await mcpCallJson(mcp, "lookup_line", args)) as typeof s.line;
-        onLog({ channel: "mcp", text: `response ${JSON.stringify(rec)}`, data: rec });
-        s.line = rec!;
-        return rec;
-      },
+      run: async () => lookup(),
     },
     {
       name: "open_ticket",
-      description: "Log the request for operations to review. Employees cannot self-serve.",
+      description:
+        "Log an upgrade request for operations to review. Only call this once the employee has " +
+        "clearly asked to change/upgrade their plan. Employees cannot change the line themselves.",
       input: { request: { type: "string", required: true } },
       run: async (args) => {
+        const line = s.line ?? (await lookup());
         s.ticket = createTicket({
           subscriber,
-          line_id: s.line!.line_id,
-          operator_name: s.line!.operator_name,
-          operator_domain: s.line!.operator_domain,
+          line_id: line.line_id,
+          operator_name: line.operator_name,
+          operator_domain: line.operator_domain,
           request: String(args.request),
         });
         return { ticket_id: s.ticket.id, status: s.ticket.status };
@@ -72,21 +95,42 @@ export async function runIntake(opts: {
   ];
 
   const provider = opts.provider ??
-    scriptedProvider("deterministic", () => {
+    scriptedProvider("deterministic", (ctx) => {
+      const lastUser =
+        [...ctx.messages].reverse().find((m) => m.role === "user")?.content ?? message;
       if (!s.line) return { toolCall: { tool: "lookup_line", args: { subscriber } } };
-      if (!s.ticket) return { toolCall: { tool: "open_ticket", args: { request: message } } };
-      return { text: `Logged as ${s.ticket.id}. Operations will review it — you can't change the line yourself.` };
+      if (wantsUpgrade(lastUser) && !s.ticket) {
+        return { toolCall: { tool: "open_ticket", args: { request: lastUser } } };
+      }
+      if (s.ticket) {
+        return {
+          text: `Done — logged as ${s.ticket.id} for operations to review. You can't change the line yourself, but they'll take it from here.`,
+        };
+      }
+      const c = s.line.current;
+      const plan = c?.data_gb
+        ? `${c.tariff} — ${c.data_gb} GB and ${c.mins} minutes for $${c.price_usd}/mo`
+        : c?.tariff
+          ? `${c.tariff}`
+          : "your current plan";
+      return {
+        text: `You're on ${plan}, on line ${s.line.line_id} with ${s.line.operator_name}. Want me to request an upgrade for you?`,
+      };
     });
 
   await runAgent({
     provider,
+    history: opts.history,
     system:
-      `You are Globex's internal assistant. The signed-in subscriber is "${subscriber}" — ` +
-      "use that exact identifier with lookup_line; never ask the user who they are. " +
-      "Find the line, then open a ticket for operations to review. Never change a line directly.",
+      `You are Globex Marketing's internal assistant, helping the signed-in employee "${subscriber}" with their company mobile line. ` +
+      `Use "${subscriber}" as the subscriber for lookups; never ask who they are. Keep replies short and natural. ` +
+      "If they say their plan is insufficient or ask about their current plan, call lookup_line and tell them their current package (data, minutes) plainly, then ask whether they'd like an upgrade. " +
+      "Only when they clearly ask to upgrade/increase/change the plan, call open_ticket to log a request for operations. Employees cannot change the line themselves. " +
+      "You can answer basic questions directly without any tool.",
     tools,
     message,
     onEvent: agentEvents(onLog),
+    maxSteps: 8,
   });
 
   await mcp.close();

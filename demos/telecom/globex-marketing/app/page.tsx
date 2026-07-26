@@ -4,8 +4,8 @@ import { useState } from "react";
 import { LogPanel, streamAgent, type LogEntry } from "./LogPanel";
 
 const PRESETS = [
-  "My mobile internet keeps running out — I need a bigger plan.",
-  "Please upgrade my phone package, the data is never enough.",
+  "My mobile data keeps running out.",
+  "What plan am I on right now?",
 ];
 
 export default function Home() {
@@ -17,14 +17,21 @@ export default function Home() {
   async function run(message: string) {
     if (!message.trim() || running) return;
     setRunning(true);
-    setChat([{ role: "user", text: message }]);
-    setLog([]);
+    const history = chat;
+    setChat((c) => [...c, { role: "user", text: message }]);
     setInput("");
-    await streamAgent("/api/intake", { subscriber: "Jordan Blake", message }, (e) => {
+    await streamAgent("/api/intake", { subscriber: "Jordan Blake", message, history }, (e) => {
       if (e.channel === "assistant") setChat((c) => [...c, { role: "assistant", text: e.text }]);
       else if (e.channel !== "user") setLog((l) => [...l, e]);
     });
     setRunning(false);
+  }
+
+  function reset() {
+    if (running) return;
+    setChat([]);
+    setLog([]);
+    setInput("");
   }
 
   return (
@@ -36,7 +43,18 @@ export default function Home() {
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Chat</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Chat</h2>
+            {chat.length > 0 && (
+              <button
+                onClick={reset}
+                disabled={running}
+                className="text-xs text-slate-400 underline hover:text-slate-600 disabled:opacity-40"
+              >
+                New chat
+              </button>
+            )}
+          </div>
           <div className="mt-4 min-h-64 space-y-3">
             {chat.length === 0 && (
               <p className="text-sm text-slate-400">

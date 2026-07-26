@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const { subscriber = "Jordan Blake", message = "" } = await request.json().catch(() => ({}));
+  const { subscriber = "Jordan Blake", message = "", history = [] } = await request.json().catch(() => ({}));
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       const { provider, note } = pickProvider();
       if (note) send({ channel: "policy", text: note } satisfies LogEntry);
       try {
-        await runIntake({ subscriber, message, provider, onLog: (e: LogEntry) => send(e) });
+        await runIntake({ subscriber, message, history, provider, onLog: (e: LogEntry) => send(e) });
       } catch (err) {
         send({ channel: "policy", text: `error: ${String(err)}` } satisfies LogEntry);
       } finally {
