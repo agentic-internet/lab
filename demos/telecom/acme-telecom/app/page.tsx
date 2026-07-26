@@ -26,7 +26,7 @@ export default function Home() {
               </span>
             </div>
             <div className="mt-1 text-slate-500">
-              {t.data_gb === null ? "Unlimited data" : `${t.data_gb} GB data`}
+              {t.data_gb} GB data · {t.mins} mins
             </div>
           </div>
         ))}

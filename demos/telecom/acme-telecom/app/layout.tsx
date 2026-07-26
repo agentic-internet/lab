@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { TopNav } from "./TopNav";
 
 export const metadata: Metadata = {
   title: "Acme Telecom",
@@ -17,6 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           </a>{" "}
           idea.
         </div>
+        <TopNav />
         {children}
       </body>
     </html>
