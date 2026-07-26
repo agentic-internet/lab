@@ -1,8 +1,9 @@
 import { buildManifest, WELL_KNOWN } from "@ail/capability-manifest";
 import { ORG, CAPABILITIES } from "@/src/data";
+import { publicOrigin } from "@/src/origin";
 
 export function GET(request: Request) {
-  const origin = new URL(request.url).origin;
+  const origin = publicOrigin(request);
 
   const manifest = buildManifest({
     version: "0.1",

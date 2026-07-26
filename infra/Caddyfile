@@ -1,0 +1,10 @@
+# Automatic HTTPS (Let's Encrypt) + subdomain routing. DNS for both names must
+# point at this server, and ports 80/443 must be reachable.
+
+acme-telecom.salginci.com {
+	reverse_proxy acme:3001
+}
+
+globex.salginci.com {
+	reverse_proxy globex:3002
+}

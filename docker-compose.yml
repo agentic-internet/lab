@@ -1,0 +1,49 @@
+services:
+  acme:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+      args:
+        APP: acme-telecom
+    environment:
+      - PUBLIC_URL=https://acme-telecom.salginci.com
+    expose:
+      - "3001"
+    restart: unless-stopped
+
+  globex:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile
+      args:
+        APP: globex-marketing
+        NEXT_PUBLIC_ACME_URL: https://acme-telecom.salginci.com
+    environment:
+      - ACME_URL=https://acme-telecom.salginci.com
+      - NEXT_PUBLIC_ACME_URL=https://acme-telecom.salginci.com
+      - CONTROL_PASSWORD=${CONTROL_PASSWORD:-demo}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+    expose:
+      - "3002"
+    depends_on:
+      - acme
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infra/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - acme
+      - globex
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

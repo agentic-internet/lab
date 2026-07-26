@@ -1,7 +1,8 @@
 import { buildRobotsTxt } from "@ail/capability-manifest";
+import { publicOrigin } from "@/src/origin";
 
 export function GET(request: Request) {
-  const origin = new URL(request.url).origin;
+  const origin = publicOrigin(request);
   const body = buildRobotsTxt({
     agentUrl: `${origin}/.well-known/agent`,
     disallow: ["/admin"],
