@@ -427,7 +427,7 @@ export async function runOpsChatA2A(opts: {
       const wantsOptions = /\b(tariff|available|option|package|plan|paket|hangi|which|current)\b/i.test(last);
 
       if (wantsApply && esc?.status === "approved") return { toolCall: { tool: "apply_change", args: {} } };
-      if (wantsEscalate && (!esc || esc.status !== "approved")) return { toolCall: { tool: "escalate_to_manager", args: {} } };
+      if (wantsEscalate && !esc) return { toolCall: { tool: "escalate_to_manager", args: {} } };
       if (wantsOptions && !s.options) return { toolCall: { tool: "query_available_tariffs", args: {} } };
       if (wantsOptions && s.options) {
         const opts2 = s.options.map((o) => `${o.name} (${o.data_gb}GB/${o.mins}m, $${o.price_usd})`).join(", ");
