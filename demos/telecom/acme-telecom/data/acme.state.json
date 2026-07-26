@@ -34,13 +34,20 @@
       "data_gb": null,
       "price_usd": 80,
       "tier": 5
+    },
+    {
+      "id": "ultra-6",
+      "name": "Ultra 6",
+      "data_gb": null,
+      "price_usd": 100,
+      "tier": 6
     }
   ],
   "lines": [
     {
       "line_id": "GLX-4471",
       "subscriber": "Globex Marketing",
-      "tariff_id": "unlimited"
+      "tariff_id": "ultra-5"
     }
   ]
 }

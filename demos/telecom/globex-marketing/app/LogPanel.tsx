@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-export type Channel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant";
+export type Channel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel";
 export interface LogEntry {
   channel: Channel;
   text: string;
@@ -16,6 +16,7 @@ const CH: Record<Channel, { label: string; cls: string; icon: string }> = {
   mcp: { label: "mcp", cls: "text-violet-300", icon: "🔌" },
   http: { label: "discovery", cls: "text-emerald-300", icon: "🌐" },
   policy: { label: "policy", cls: "text-rose-300", icon: "🛑" },
+  panel: { label: "admin panel", cls: "text-amber-300", icon: "🔑" },
 };
 
 /** Read an NDJSON stream from a POST and push each parsed LogEntry to onEntry. */

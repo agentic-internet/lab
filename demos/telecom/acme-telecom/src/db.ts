@@ -42,8 +42,20 @@ function persist(s: State): void {
   writeFileSync(FILE, JSON.stringify(s, null, 2));
 }
 
+/** A bespoke secret Acme shares only with pre-arranged partners for its private
+ *  admin panel. Demo A depends on this + hardcoded knowledge of the panel API. */
+export const ADMIN_TOKEN = "demo-panel-token";
+
 export function listTariffs(): Tariff[] {
   return load().tariffs.sort((a, b) => a.tier - b.tier);
+}
+
+export function listLines(): Line[] {
+  return load().lines;
+}
+
+export function tariffName(id: string): string {
+  return load().tariffs.find((t) => t.id === id)?.name ?? id;
 }
 
 export function getLine(lineId: string): Line | undefined {

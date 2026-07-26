@@ -12,7 +12,7 @@ import { createTicket, getTicket, resolveTicket, type Ticket } from "./tickets";
  * Both emit one unified stream of typed log entries — what the log panel shows.
  */
 
-export type LogChannel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant";
+export type LogChannel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel";
 export interface LogEntry {
   channel: LogChannel;
   text: string;
@@ -92,16 +92,24 @@ export async function runIntake(opts: {
 
 /* --------------------------------------------------------------- resolve --- */
 
+export type ResolveMode = "agent-to-agent" | "agent-to-human";
+
 export async function runResolve(opts: {
   ticketId: string;
+  mode?: ResolveMode;
   onLog: OnLog;
   provider?: LLMProvider;
 }): Promise<Ticket | undefined> {
   const { ticketId, onLog } = opts;
+  const mode: ResolveMode = opts.mode ?? "agent-to-agent";
   const ticket = getTicket(ticketId);
   if (!ticket) {
     onLog({ channel: "policy", text: `unknown ticket ${ticketId}` });
     return undefined;
+  }
+
+  if (mode === "agent-to-human") {
+    return resolveViaAdminPanel(ticket, onLog);
   }
 
   const s: {
@@ -186,5 +194,51 @@ export async function runResolve(opts: {
     onEvent: agentEvents(onLog),
   });
 
+  return resolveTicket(ticket.id, reply);
+}
+
+/* ------------------------------------------------ agent-to-human (Demo A) --- */
+
+/**
+ * Today's path. There is no published agent to talk to, so operations goes into
+ * the operator's OWN admin panel. That only works because Acme handed Globex a
+ * token and an engineer hardcoded Acme's private admin API. No discovery — just
+ * bespoke, brittle, pre-arranged knowledge of one operator's internal panel.
+ */
+const ACME_ADMIN_TOKEN = "demo-panel-token"; // shared out-of-band, per partner
+const NEXT_TARIFF: Record<string, string> = { standard: "unlimited" }; // hardcoded assumption
+
+async function resolveViaAdminPanel(ticket: Ticket, onLog: OnLog): Promise<Ticket | undefined> {
+  onLog({ channel: "user", text: `Resolve ticket ${ticket.id}: ${ticket.request}` });
+  onLog({
+    channel: "panel",
+    text: "no published agent — operations opens the operator's admin panel by hand",
+  });
+
+  const base = ticket.operator_domain;
+  // A human "logs in" to Acme's panel — a separate account, a shared secret.
+  onLog({ channel: "panel", text: `open ${base}/admin (login as pre-arranged partner)` });
+
+  // Globex has to know Acme's private endpoint + guess the next tariff. Brittle.
+  const target = NEXT_TARIFF[/* current tariff, assumed */ "standard"] ?? "unlimited";
+  onLog({ channel: "panel", text: `POST ${base}/admin/api/change (hardcoded endpoint + token)` });
+
+  const res = await fetch(`${base}/admin/api/change`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-token": ACME_ADMIN_TOKEN },
+    body: JSON.stringify({ line_id: ticket.line_id, target_tariff_id: target }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { ok?: boolean; to?: string; reason?: string };
+  onLog({ channel: "panel", text: `${res.status} ${JSON.stringify(body)}` });
+
+  onLog({
+    channel: "policy",
+    text: "if Acme changes its panel, renames the endpoint, or rotates the token, this breaks",
+  });
+
+  const reply = body.ok
+    ? `Done via Acme's admin panel. ${ticket.line_id} → ${body.to}.`
+    : `Failed in Acme's admin panel: ${body.reason ?? res.status}`;
+  onLog({ channel: "assistant", text: reply });
   return resolveTicket(ticket.id, reply);
 }
