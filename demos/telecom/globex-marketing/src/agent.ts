@@ -160,7 +160,24 @@ export async function runOpsChat(opts: {
     return;
   }
 
+  const mcp = await connectGlobexMcp();
+  const s: { line?: LinePlan } = {};
+
   const tools: ToolDef[] = [
+    {
+      name: "lookup_line",
+      description:
+        "Look up the employee's line, operator, and current package (data, minutes, price). " +
+        "Use this to answer questions about their current plan.",
+      input: {},
+      run: async () => {
+        onLog({ channel: "mcp", text: `call lookup_line({"subscriber":"${ticket.subscriber}"})` });
+        const rec = (await mcpCallJson(mcp, "lookup_line", { subscriber: ticket.subscriber })) as LinePlan;
+        onLog({ channel: "mcp", text: `response ${JSON.stringify(rec)}`, data: rec });
+        s.line = rec;
+        return rec;
+      },
+    },
     {
       name: "escalate_to_manager",
       description:
@@ -215,6 +232,20 @@ export async function runOpsChat(opts: {
         if (esc?.status === "approved") return { toolCall: { tool: "close_task", args: {} } };
         return { text: "I can't close this yet — it needs the manager's approval first." };
       }
+      const wantsInfo = /\b(package|plan|tariff|paket|current|data|minute|dakika|how much|ne kadar|hangi)\b/i.test(last);
+      if (wantsInfo) {
+        if (!s.line) return { toolCall: { tool: "lookup_line", args: {} } };
+        const c = s.line.current;
+        const plan = c?.data_gb
+          ? `${c.tariff} — ${c.data_gb} GB and ${c.mins} minutes for $${c.price_usd}/mo`
+          : c?.tariff ?? "their current plan";
+        const tail = esc
+          ? esc.status === "approved"
+            ? " The manager has approved the upgrade."
+            : " It's escalated and awaiting the manager's approval."
+          : " Shall I escalate the upgrade to a manager?";
+        return { text: `${ticket.subscriber} is on ${plan}, line ${ticket.line_id}.${tail}` };
+      }
       if (!esc && /\b(escalate|manager|confirm|approve|onay|yönetici|yükselt)\b/i.test(last)) {
         return { toolCall: { tool: "escalate_to_manager", args: { reason: ticket.request } } };
       }
@@ -243,6 +274,7 @@ export async function runOpsChat(opts: {
       `You are Globex operations' assistant for ticket ${ticket.id}: ${ticket.subscriber}, line ${ticket.line_id} on ${ticket.operator_name}, request "${ticket.request}". ` +
       "You CANNOT change the operator's line yourself, and you must not contact the operator. The process is human-driven: " +
       "(1) escalate_to_manager for confirmation; (2) once the manager approves, the operator applies the change by hand in Acme's business portal; (3) close_task when the operator says it's done. " +
+      "If asked about the employee's current package/plan, call lookup_line and answer plainly (data, minutes, price). " +
       "Trust the CURRENT STATUS below over any assumption — never re-escalate an already-escalated ticket, and if it is already approved you may close it when asked. Keep replies short and plain. " +
       statusLine,
     tools,
@@ -250,6 +282,8 @@ export async function runOpsChat(opts: {
     onEvent: agentEvents(onLog),
     maxSteps: 6,
   });
+
+  await mcp.close();
 }
 
 /* --------------------------------------------------------------- resolve --- */
