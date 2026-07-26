@@ -123,6 +123,7 @@ export async function runResolve(opts: {
     agent_endpoint?: string;
     capabilities?: Capability[];
     options?: { id: string; name: string; price_usd: number }[];
+    current?: { id: string; name: string; tier: number };
     reachedOut?: boolean;
     authNoted?: boolean;
     queried?: boolean;
@@ -219,9 +220,10 @@ export async function runResolve(opts: {
         const res = await callCapability(s.agent_endpoint!, capId, input, {
           onEvent: (e) => { if (e.step === "note") onLog({ channel: "http", text: e.message }); },
         });
-        const body = res.body as { tariffs?: typeof s.options; reason?: string };
+        const body = res.body as { tariffs?: typeof s.options; current?: typeof s.current; reason?: string };
         if (res.status === 409) onLog({ channel: "policy", text: `refused: ${body.reason ?? "not allowed"}` });
         if (body.tariffs) s.options = body.tariffs;
+        if (body.current) s.current = body.current;
         return { status: res.status, ...(res.body as object) };
       },
     },
@@ -240,9 +242,13 @@ export async function runResolve(opts: {
         s.queried = true;
         return { toolCall: { tool: "call_capability", args: { capability_id: queryCap.id, input: { line_id: ticket.line_id } } } };
       }
-      if (!s.triedDowngrade && changeCap) {
+      // Force one downgrade attempt to surface the operator's guardrail. The lower
+      // tariff (one tier below current) is always in the visible window, so it exists
+      // and gets refused. Demo scaffolding — a real model wouldn't try this.
+      const lowerId = s.current ? `PKC-${String(s.current.tier - 1).padStart(2, "0")}` : undefined;
+      if (!s.triedDowngrade && changeCap && lowerId) {
         s.triedDowngrade = true;
-        return { toolCall: { tool: "call_capability", args: { capability_id: changeCap.id, input: { line_id: ticket.line_id, target_tariff_id: "starter" } } } };
+        return { toolCall: { tool: "call_capability", args: { capability_id: changeCap.id, input: { line_id: ticket.line_id, target_tariff_id: lowerId } } } };
       }
       if (!s.upgraded && changeCap && s.options?.length) {
         s.upgraded = true;
@@ -282,7 +288,6 @@ export async function runResolve(opts: {
  * bespoke, brittle, pre-arranged knowledge of one operator's internal panel.
  */
 const ACME_ADMIN_TOKEN = "demo-panel-token"; // shared out-of-band, per partner
-const NEXT_TARIFF: Record<string, string> = { standard: "unlimited" }; // hardcoded assumption
 
 async function resolveViaAdminPanel(ticket: Ticket, onLog: OnLog): Promise<Ticket | undefined> {
   onLog({ channel: "user", text: `Resolve ticket ${ticket.id}: ${ticket.request}` });
@@ -295,14 +300,31 @@ async function resolveViaAdminPanel(ticket: Ticket, onLog: OnLog): Promise<Ticke
   // A human "logs in" to Acme's panel — a separate account, a shared secret.
   onLog({ channel: "panel", text: `open ${base}/admin (login as pre-arranged partner)` });
 
-  // Globex has to know Acme's private endpoint + guess the next tariff. Brittle.
-  const target = NEXT_TARIFF[/* current tariff, assumed */ "standard"] ?? "unlimited";
-  onLog({ channel: "panel", text: `POST ${base}/admin/api/change (hardcoded endpoint + token)` });
+  // The human reads the panel's own line list to see the current plan and the
+  // options — no discovery, just a hardcoded private endpoint they were told about.
+  onLog({ channel: "panel", text: `GET ${base}/admin/api/lines (hardcoded private endpoint)` });
+  type PanelTariff = { id: string; name: string; tier: number };
+  const view = (await fetch(`${base}/admin/api/lines`).then((r) => r.json()).catch(() => ({}))) as {
+    lines?: { line_id: string; tariff_id: string }[];
+    tariffs?: PanelTariff[];
+  };
+  const line = (view.lines ?? []).find((l) => l.line_id === ticket.line_id);
+  const tariffs = view.tariffs ?? [];
+  const currentTier = tariffs.find((t) => t.id === line?.tariff_id)?.tier ?? 0;
+  const target = tariffs.filter((t) => t.tier > currentTier).sort((a, b) => a.tier - b.tier)[0];
 
+  if (!target) {
+    const reply = "No higher tariff visible in Acme's panel.";
+    onLog({ channel: "policy", text: reply });
+    onLog({ channel: "assistant", text: reply });
+    return resolveTicket(ticket.id, reply);
+  }
+
+  onLog({ channel: "panel", text: `POST ${base}/admin/api/change → ${target.id} (hardcoded endpoint + token)` });
   const res = await fetch(`${base}/admin/api/change`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-admin-token": ACME_ADMIN_TOKEN },
-    body: JSON.stringify({ line_id: ticket.line_id, target_tariff_id: target }),
+    body: JSON.stringify({ line_id: ticket.line_id, target_tariff_id: target.id }),
   });
   const body = (await res.json().catch(() => ({}))) as { ok?: boolean; to?: string; reason?: string };
   onLog({ channel: "panel", text: `${res.status} ${JSON.stringify(body)}` });

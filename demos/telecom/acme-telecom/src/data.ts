@@ -11,19 +11,36 @@ export const ORG = {
 export interface Tariff {
   id: string;
   name: string;
-  data_gb: number | null; // null = unlimited
+  data_gb: number;
+  mins: number;
   price_usd: number;
   tier: number; // ordering; higher = more
+  deleted?: boolean; // soft-deleted: fell out of the visible window below the active tariff
 }
 
-/** Seed tariffs. The "no downgrade" rule means each successful upgrade appends a
- *  new top tier at runtime, so repeated demo runs always have somewhere higher to go. */
-export const SEED_TARIFFS: Tariff[] = [
-  { id: "starter", name: "Starter", data_gb: 10, price_usd: 15, tier: 1 },
-  { id: "standard", name: "Standard", data_gb: 30, price_usd: 25, tier: 2 },
-  { id: "pro", name: "Pro", data_gb: 100, price_usd: 40, tier: 3 },
-  { id: "unlimited", name: "Unlimited", data_gb: null, price_usd: 60, tier: 4 },
-];
+/**
+ * Tariffs live on an endless ladder. Tier n is generated deterministically, so
+ * the visible window can slide upward forever without a seed list running out —
+ * see the re-centring in db.ts. Codes read like an operator's package catalogue.
+ */
+export function makeTariff(n: number): Tariff {
+  const code = `PKC-${String(n).padStart(2, "0")}`;
+  return {
+    id: code,
+    name: code,
+    data_gb: n * 20,
+    mins: n * 250,
+    price_usd: 5 + n * 10,
+    tier: n,
+    deleted: false,
+  };
+}
+
+/** Seed: five tariffs, with the line sitting on the middle one (PKC-03). */
+export const SEED_TARIFFS: Tariff[] = [1, 2, 3, 4, 5].map(makeTariff);
+
+/** The line always starts centred on the ladder. */
+export const SEED_ACTIVE_TARIFF = "PKC-03";
 
 /** The capabilities Acme publishes. Local ids — meaning-based matching does the work. */
 export const CAPABILITIES: Capability[] = [
@@ -32,7 +49,7 @@ export const CAPABILITIES: Capability[] = [
     kind: "immediate",
     version: "1.0",
     title: "List available tariffs for a line",
-    description: "Return the tariffs a given mobile line is eligible to move to.",
+    description: "Return the line's current tariff and the tariffs it is eligible to move up to.",
     semantics: {
       domain: "telecom",
       outcome: "tariff-options",
@@ -43,7 +60,8 @@ export const CAPABILITIES: Capability[] = [
       line_id: { type: "string", required: true, description: "The mobile line identifier." },
     },
     output: {
-      tariffs: { type: "Tariff[]", required: true, description: "Eligible tariffs." },
+      current: { type: "Tariff", required: true, description: "The line's current tariff." },
+      tariffs: { type: "Tariff[]", required: true, description: "Higher tariffs the line can move to." },
     },
     interaction: { type: "agent", target: "/agent" },
     authentication: { type: "none" },

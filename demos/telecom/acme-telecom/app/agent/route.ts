@@ -1,4 +1,4 @@
-import { listHigherTariffs, changeTariff } from "@/src/db";
+import { listHigherTariffs, changeTariff, getCurrentTariff } from "@/src/db";
 
 export const runtime = "nodejs";
 
@@ -25,8 +25,9 @@ export async function POST(request: Request) {
   switch (capability) {
     case "telecom.line.tariff.query": {
       const lineId = String(input.line_id ?? "");
+      const current = getCurrentTariff(lineId);
       const tariffs = listHigherTariffs(lineId);
-      return Response.json({ ok: true, capability, tariffs });
+      return Response.json({ ok: true, capability, current, tariffs });
     }
 
     case "telecom.line.tariff.change": {

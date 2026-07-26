@@ -11,7 +11,8 @@ interface Line {
 interface Tariff {
   id: string;
   name: string;
-  data_gb: number | null;
+  data_gb: number;
+  mins: number;
   price_usd: number;
   tier: number;
 }
@@ -42,10 +43,12 @@ export default function AcmeDb() {
         rows={lines.map((l) => [l.line_id, l.subscriber, l.tariff_id, l.tariff_name])}
       />
 
-      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wide text-slate-500">tariffs</h2>
+      <h2 className="mt-8 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        tariffs <span className="font-normal normal-case text-slate-400">— the visible window (active plan always in the middle)</span>
+      </h2>
       <Table
-        head={["id", "name", "data_gb", "price", "tier"]}
-        rows={tariffs.map((t) => [t.id, t.name, t.data_gb === null ? "∞" : String(t.data_gb), `$${t.price_usd}`, String(t.tier)])}
+        head={["name", "data", "minutes", "price", "tier"]}
+        rows={tariffs.map((t) => [t.name, `${t.data_gb} GB`, `${t.mins} Mins`, `$${t.price_usd}`, String(t.tier)])}
       />
     </main>
   );

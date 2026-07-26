@@ -11,7 +11,8 @@ interface Line {
 interface Tariff {
   id: string;
   name: string;
-  data_gb: number | null;
+  data_gb: number;
+  mins: number;
   price_usd: number;
   tier: number;
 }
@@ -73,7 +74,7 @@ export default function Admin() {
                   onClick={() => change(l.line_id, t.id)}
                   className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
                 >
-                  {t.name}
+                  {t.name} · {t.data_gb}GB · {t.mins}m
                 </button>
               ))}
             </div>
