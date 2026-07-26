@@ -1,11 +1,13 @@
 import { runResolve, type LogEntry, type ResolveMode } from "@/src/agent";
-import { pickProvider, consumeRateIfLive } from "@/src/settings";
+import { pickProvider, consumeRateIfLive, getSettings } from "@/src/settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const { ticketId, mode = "agent-to-agent" } = await request.json().catch(() => ({}));
+  const { ticketId } = await request.json().catch(() => ({}));
+  // The resolution flow is a demo-wide setting owned by Admin, not the caller.
+  const mode = getSettings().flow;
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {

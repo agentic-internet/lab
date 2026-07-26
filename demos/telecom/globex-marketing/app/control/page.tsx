@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 interface View {
+  flow: "agent-to-agent" | "agent-to-human";
   mode: "deterministic" | "live";
   provider: "anthropic" | "deepseek";
   model: string;
@@ -79,6 +80,22 @@ export default function Control() {
       <h1 className="text-lg font-semibold text-slate-700">Admin <span className="font-normal text-slate-400">— demo controls</span></h1>
 
       <section className="mt-6 space-y-6">
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">Resolution flow</label>
+          <div className="mt-2 inline-flex rounded-lg border border-slate-200 bg-white p-0.5">
+            <Toggle on={view.flow === "agent-to-human"} onClick={() => patch({ flow: "agent-to-human" })}>
+              Agent → Human (today)
+            </Toggle>
+            <Toggle on={view.flow === "agent-to-agent"} onClick={() => patch({ flow: "agent-to-agent" })}>
+              Agent → Agent (org to org)
+            </Toggle>
+          </div>
+          <p className="mt-1 text-xs text-slate-400">
+            How every ticket in Operations is resolved. Agent → Human drives the operator&apos;s admin
+            panel by hand; Agent → Agent discovers the operator and works with its agent.
+          </p>
+        </div>
+
         <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-400">Reasoning</label>
           <div className="mt-2 inline-flex rounded-lg border border-slate-200 bg-white p-0.5">

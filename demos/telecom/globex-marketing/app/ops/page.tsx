@@ -21,10 +21,14 @@ export default function Ops() {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
-  const [mode, setMode] = useState<Mode>("agent-to-agent");
+  const [flow, setFlow] = useState<Mode>("agent-to-agent");
 
   async function refresh() {
     setTickets(await (await fetch("/api/tickets")).json());
+    try {
+      const f = await (await fetch("/api/flow")).json();
+      setFlow(f.flow);
+    } catch {}
   }
   useEffect(() => {
     refresh();
@@ -37,7 +41,7 @@ export default function Ops() {
     setRunning(true);
     setActive(ticketId);
     setLog([]);
-    await streamAgent("/api/resolve", { ticketId, mode }, (e) => {
+    await streamAgent("/api/resolve", { ticketId }, (e) => {
       if (e.channel !== "user") setLog((l) => [...l, e]);
     });
     setRunning(false);
@@ -55,26 +59,22 @@ export default function Ops() {
 
       <div className="mt-6 flex items-center gap-3">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Resolution mode
+          Resolution flow
         </span>
-        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-sm">
-          {(["agent-to-human", "agent-to-agent"] as Mode[]).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              disabled={running}
-              className={
-                "rounded-md px-3 py-1.5 transition " +
-                (mode === m ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-50")
-              }
-            >
-              {m === "agent-to-human" ? "Agent → Human (today)" : "Agent → Agent (proposed)"}
-            </button>
-          ))}
-        </div>
+        <span
+          className={
+            "rounded-md px-3 py-1.5 text-sm font-medium " +
+            (flow === "agent-to-human" ? "bg-amber-100 text-amber-800" : "bg-slate-800 text-white")
+          }
+        >
+          {flow === "agent-to-human" ? "Agent → Human (today)" : "Agent → Agent (org to org)"}
+        </span>
+        <Link href="/control" className="text-xs text-slate-400 underline hover:text-slate-600">
+          change in Admin →
+        </Link>
       </div>
       <p className="mt-2 text-xs text-slate-400">
-        {mode === "agent-to-human"
+        {flow === "agent-to-human"
           ? "Today: no shared way in, so operations works in the operator's own admin panel — a bespoke, brittle path."
           : "Proposed: the assistant discovers the operator and works with its agent — no prior integration."}
       </p>
@@ -125,12 +125,12 @@ export default function Ops() {
 
         <LogPanel
           log={log}
-          title={mode === "agent-to-human" ? "Resolution — via the operator's admin panel" : "Resolution — agent to agent, live"}
+          title={flow === "agent-to-human" ? "Resolution — via the operator's admin panel" : "Resolution — agent to agent, live"}
         />
       </div>
 
       <p className="mt-6 text-center text-xs text-slate-400">
-        Flip the toggle and resolve the same ticket both ways — watch the log panel change.
+        Set the resolution flow in Admin, then resolve the same ticket both ways — watch the log panel change.
       </p>
     </main>
   );

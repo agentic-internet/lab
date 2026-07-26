@@ -10,6 +10,8 @@ import { anthropicProvider, deepseekProvider, type LLMProvider } from "@ail/agen
  */
 
 export interface Settings {
+  /** How a ticket is resolved — the demo-wide behaviour, set in Admin. */
+  flow: "agent-to-agent" | "agent-to-human";
   mode: "deterministic" | "live";
   provider: "anthropic" | "deepseek";
   model: string;
@@ -27,6 +29,7 @@ function today(): string {
 
 function defaults(): Settings {
   return {
+    flow: "agent-to-agent",
     mode: "deterministic",
     provider: "anthropic",
     model: "claude-sonnet-5",
@@ -38,7 +41,8 @@ function defaults(): Settings {
 
 export function getSettings(): Settings {
   if (!existsSync(FILE)) return defaults();
-  const s = JSON.parse(readFileSync(FILE, "utf8")) as Settings;
+  // Merge over defaults so a state file written before a field existed still loads.
+  const s = { ...defaults(), ...(JSON.parse(readFileSync(FILE, "utf8")) as Partial<Settings>) };
   if (s.date !== today()) {
     s.date = today();
     s.usedToday = 0;
@@ -66,6 +70,7 @@ export function updateSettings(patch: Partial<Settings>): Settings {
 export function publicSettings() {
   const s = getSettings();
   return {
+    flow: s.flow,
     mode: s.mode,
     provider: s.provider,
     model: s.model,
