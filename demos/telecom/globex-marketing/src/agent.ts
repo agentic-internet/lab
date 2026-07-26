@@ -229,14 +229,22 @@ export async function runOpsChat(opts: {
       return { text: `Escalated to the manager (${esc.id}). Waiting on their approval before anything is changed.` };
     });
 
+  const escNow = forTicket(ticket.id);
+  const statusLine = escNow
+    ? escNow.status === "approved"
+      ? `CURRENT STATUS: this ticket was escalated (${escNow.id}) and the MANAGER HAS ALREADY APPROVED it. Do NOT escalate again. If the operator says the change is applied or asks to close, call close_task.`
+      : `CURRENT STATUS: this ticket is already escalated (${escNow.id}) and is AWAITING the manager's approval. Do NOT escalate again, and you cannot close it yet.`
+    : "CURRENT STATUS: not yet escalated. If the operator wants to proceed, call escalate_to_manager.";
+
   await runAgent({
     provider,
     history: opts.history,
     system:
       `You are Globex operations' assistant for ticket ${ticket.id}: ${ticket.subscriber}, line ${ticket.line_id} on ${ticket.operator_name}, request "${ticket.request}". ` +
       "You CANNOT change the operator's line yourself, and you must not contact the operator. The process is human-driven: " +
-      "(1) escalate_to_manager for confirmation; (2) once check_manager_decision shows approved, the operator applies the change by hand in Acme's business portal; (3) close_task when the operator says it's done. " +
-      "Never close before the manager approves. Keep replies short and plain.",
+      "(1) escalate_to_manager for confirmation; (2) once the manager approves, the operator applies the change by hand in Acme's business portal; (3) close_task when the operator says it's done. " +
+      "Trust the CURRENT STATUS below over any assumption — never re-escalate an already-escalated ticket, and if it is already approved you may close it when asked. Keep replies short and plain. " +
+      statusLine,
     tools,
     message,
     onEvent: agentEvents(onLog),
