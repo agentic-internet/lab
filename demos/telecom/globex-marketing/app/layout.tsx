@@ -11,12 +11,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className="min-h-screen bg-slate-100 text-slate-800 antialiased">
         <div className="bg-amber-100 text-amber-900 text-center text-xs py-1.5 px-4">
-          Not a real company. Globex Marketing and Acme Telecom are fictional, built to demonstrate
-          the{" "}
+          Not a real company — a demo of the{" "}
           <a href="https://github.com/agentic-internet/agentic-internet" className="underline">
             agentic-internet
           </a>{" "}
-          idea.
+          idea.{" "}
+          <a href="/guide" className="font-medium underline">What is this? →</a>
         </div>
         {children}
       </body>
