@@ -205,9 +205,15 @@ export async function runOpsChat(opts: {
   const provider = opts.provider ??
     scriptedProvider("deterministic", (ctx) => {
       const last = [...ctx.messages].reverse().find((m) => m.role === "user")?.content ?? message;
+      const current = getTicket(ticket.id);
+      if (current?.status === "done") {
+        return { text: `Ticket ${ticket.id} is closed — nothing more to do.` };
+      }
       const esc = forTicket(ticket.id);
-      if (/\b(close|done|finished|complete|kapat|bitti|tamamla)\b/i.test(last)) {
-        return { toolCall: { tool: "close_task", args: {} } };
+      const wantsClose = /\b(close|done|finished|complete|kapat|bitti|tamamla)\b/i.test(last);
+      if (wantsClose) {
+        if (esc?.status === "approved") return { toolCall: { tool: "close_task", args: {} } };
+        return { text: "I can't close this yet — it needs the manager's approval first." };
       }
       if (!esc && /\b(escalate|manager|confirm|approve|onay|yönetici|yükselt)\b/i.test(last)) {
         return { toolCall: { tool: "escalate_to_manager", args: { reason: ticket.request } } };
