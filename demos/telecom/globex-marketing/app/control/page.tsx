@@ -37,6 +37,14 @@ export default function Control() {
     if (res.ok) setView(await res.json());
   }
 
+  const [resetMsg, setResetMsg] = useState("");
+  async function resetDemo() {
+    setResetMsg("resetting…");
+    const res = await fetch("/api/reset", { method: "POST", headers: { "x-control-password": pw } });
+    const r = await res.json();
+    setResetMsg(res.ok ? `Reset done (Acme: ${r.acmeReset ? "ok" : "unreachable"})` : "Reset failed");
+  }
+
   if (!view) {
     return (
       <main className="mx-auto max-w-sm px-6 py-24">
@@ -124,9 +132,20 @@ export default function Control() {
         </div>
       </section>
 
-      <p className="mt-10 text-xs text-slate-400">
+      <div className="mt-10 border-t border-slate-100 pt-6">
+        <button
+          onClick={resetDemo}
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+        >
+          Reset demo (tickets + Acme tariffs/lines)
+        </button>
+        {resetMsg && <span className="ml-3 text-sm text-slate-500">{resetMsg}</span>}
+      </div>
+
+      <p className="mt-6 text-xs text-slate-400">
         For the internal demo: Anthropic + Live. For public: DeepSeek (or Deterministic) to keep costs
-        near zero. Discovery, MCP, DB and the guardrail are always real.
+        near zero. Discovery, MCP, DB and the guardrail are always real. Data views:{" "}
+        <a href="/db" className="underline">Globex tickets</a>.
       </p>
     </main>
   );
