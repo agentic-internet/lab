@@ -49,7 +49,7 @@ export default function Control() {
   if (!view) {
     return (
       <main className="mx-auto max-w-sm px-6 py-24">
-        <h1 className="text-lg font-semibold text-slate-700">Admin</h1>
+        <h1 className="text-lg font-semibold text-slate-700">Settings</h1>
         <p className="mt-1 text-sm text-slate-400">Operator only — demo controls.</p>
         <form onSubmit={(e) => { e.preventDefault(); load(pw); }} className="mt-6 flex gap-2">
           <input
@@ -77,7 +77,7 @@ export default function Control() {
 
   return (
     <main className="mx-auto max-w-lg px-6 py-16">
-      <h1 className="text-lg font-semibold text-slate-700">Admin <span className="font-normal text-slate-400">— demo controls</span></h1>
+      <h1 className="text-lg font-semibold text-slate-700">Settings <span className="font-normal text-slate-400">— demo controls</span></h1>
 
       <section className="mt-6 space-y-6">
         <div>

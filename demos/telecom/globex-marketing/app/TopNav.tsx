@@ -7,11 +7,12 @@ import { usePathname } from "next/navigation";
 const MAIN = [
   { href: "/", label: "Employee", active: (p: string) => p === "/" },
   { href: "/ops", label: "Operations", active: (p: string) => p.startsWith("/ops") },
-  { href: "/control", label: "Admin", active: (p: string) => p.startsWith("/control") },
+  { href: "/admin", label: "Admin", active: (p: string) => p.startsWith("/admin") },
 ];
 
 const SECONDARY = [
   { href: "/db", label: "Data" },
+  { href: "/control", label: "Settings" },
   { href: "/guide", label: "Guide" },
 ];
 
