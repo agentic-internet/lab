@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const { subscriber = "Globex Marketing", message = "" } = await request.json().catch(() => ({}));
+  const { subscriber = "Jordan Blake", message = "" } = await request.json().catch(() => ({}));
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {

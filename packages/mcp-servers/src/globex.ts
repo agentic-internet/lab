@@ -16,7 +16,9 @@ const DIRECTORY: Record<
   string,
   { line_id: string; operator_name: string; operator_domain: string }
 > = {
-  "Globex Marketing": {
+  // Keyed by the employee — the same person who appears on Acme's account as the
+  // holder of GLX-4471. Keeps the two platforms aligned on one named individual.
+  "Jordan Blake": {
     line_id: "GLX-4471",
     operator_name: "Acme Telecom",
     operator_domain: process.env.ACME_URL ?? "http://localhost:3001",

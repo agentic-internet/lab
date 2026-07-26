@@ -20,7 +20,7 @@ export default function Home() {
     setChat([{ role: "user", text: message }]);
     setLog([]);
     setInput("");
-    await streamAgent("/api/intake", { subscriber: "Globex Marketing", message }, (e) => {
+    await streamAgent("/api/intake", { subscriber: "Jordan Blake", message }, (e) => {
       if (e.channel === "assistant") setChat((c) => [...c, { role: "assistant", text: e.text }]);
       else if (e.channel !== "user") setLog((l) => [...l, e]);
     });
@@ -31,7 +31,7 @@ export default function Home() {
     <main className="mx-auto max-w-5xl px-6 py-10">
       <h1 className="text-lg font-semibold text-slate-700">Employee assistant</h1>
       <p className="mt-1 text-sm text-slate-400">
-        Signed in as a Globex marketer — ask about your mobile plan.
+        Signed in as <span className="font-medium text-slate-500">Jordan Blake</span> · line GLX-4471 · Globex Marketing.
       </p>
 
       <div className="mt-8 grid gap-6 lg:grid-cols-2">
@@ -40,8 +40,8 @@ export default function Home() {
           <div className="mt-4 min-h-64 space-y-3">
             {chat.length === 0 && (
               <p className="text-sm text-slate-400">
-                You&apos;re signed in as a Globex marketer. Ask the assistant about your mobile plan —
-                it logs a ticket for operations (you can&apos;t change the line yourself).
+                You&apos;re signed in as Jordan Blake (line GLX-4471). Ask the assistant about your mobile
+                plan — it logs a ticket for operations (you can&apos;t change the line yourself).
               </p>
             )}
             {chat.map((m, i) => (
