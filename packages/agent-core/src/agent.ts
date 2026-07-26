@@ -1,4 +1,7 @@
-import type { LLMProvider, Msg, OnAgentEvent, ToolDef, TurnContext } from "./types";
+import type { LLMProvider, Msg, OnAgentEvent, ToolDef, Turn, TurnContext } from "./types";
+
+let seq = 0;
+const nextId = () => `call_${Date.now()}_${seq++}`;
 
 /**
  * The agent loop, provider-agnostic. Ask the provider what to do; if it calls a
@@ -19,22 +22,17 @@ export async function runAgent(opts: {
 
   const maxSteps = opts.maxSteps ?? 10;
   for (let step = 0; step < maxSteps; step++) {
-    const turn = await opts.provider.turn({
-      system: opts.system,
-      messages,
-      tools: opts.tools,
-    });
+    const turn = await opts.provider.turn({ system: opts.system, messages, tools: opts.tools });
 
     if (turn.toolCall) {
+      const id = turn.toolCall.id ?? nextId();
       const { tool, args } = turn.toolCall;
       emit({ type: "tool-call", tool, args });
       const def = opts.tools.find((t) => t.name === tool);
-      const result = def
-        ? await def.run(args)
-        : { error: `unknown tool ${tool}` };
+      const result = def ? await def.run(args) : { error: `unknown tool ${tool}` };
       emit({ type: "tool-result", tool, result });
-      messages.push({ role: "assistant", content: `call ${tool}(${JSON.stringify(args)})` });
-      messages.push({ role: "tool", content: JSON.stringify(result) });
+      messages.push({ role: "assistant", toolCall: { id, tool, args } });
+      messages.push({ role: "tool", toolCallId: id, content: JSON.stringify(result) });
       continue;
     }
 
@@ -55,7 +53,7 @@ export async function runAgent(opts: {
  */
 export function scriptedProvider(
   name: string,
-  script: (ctx: TurnContext) => Promise<import("./types").Turn> | import("./types").Turn,
+  script: (ctx: TurnContext) => Promise<Turn> | Turn,
 ): LLMProvider {
   return {
     name,

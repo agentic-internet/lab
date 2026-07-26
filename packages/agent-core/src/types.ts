@@ -1,13 +1,6 @@
 /** A pluggable agent runtime. The LLM is one provider behind an interface; the
  *  mechanics (tools) are always real and independent of which provider runs. */
 
-export type Role = "user" | "assistant" | "tool";
-
-export interface Msg {
-  role: Role;
-  content: string;
-}
-
 export interface ToolField {
   type: string;
   required?: boolean;
@@ -22,13 +15,20 @@ export interface ToolDef {
 }
 
 export interface ToolCall {
+  id: string;
   tool: string;
   args: Record<string, unknown>;
 }
 
+/** Structured conversation, so real providers can pair tool_use with tool_result. */
+export type Msg =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content?: string; toolCall?: ToolCall }
+  | { role: "tool"; toolCallId: string; content: string };
+
 /** What one provider turn produces: either a tool call or a final reply. */
 export interface Turn {
-  toolCall?: ToolCall;
+  toolCall?: { id?: string; tool: string; args: Record<string, unknown> };
   text?: string;
 }
 
