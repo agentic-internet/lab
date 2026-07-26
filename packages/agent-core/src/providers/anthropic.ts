@@ -75,5 +75,7 @@ function jsonType(t: string): string {
   if (t === "integer") return "integer";
   if (t === "boolean") return "boolean";
   if (t === "number") return "number";
+  if (t === "object") return "object";
+  if (t === "array") return "array";
   return "string";
 }

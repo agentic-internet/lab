@@ -17,3 +17,6 @@ next-env.d.ts
 
 # local session aid — points to private notes
 CLAUDE.md
+
+# TS incremental build cache
+*.tsbuildinfo

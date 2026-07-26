@@ -12,7 +12,7 @@ import { createTicket, getTicket, resolveTicket, type Ticket } from "./tickets";
  * Both emit one unified stream of typed log entries — what the log panel shows.
  */
 
-export type LogChannel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel";
+export type LogChannel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel" | "boundary";
 export interface LogEntry {
   channel: LogChannel;
   text: string;
@@ -112,10 +112,16 @@ export async function runResolve(opts: {
     return resolveViaAdminPanel(ticket, onLog);
   }
 
+  // The outward-reaching skill needs Globex's own records to identify who is
+  // responsible — the same MCP directory the intake used.
+  const mcp = await connectGlobexMcp();
   const s: {
+    domain?: string;
     agent_endpoint?: string;
     capabilities?: Capability[];
     options?: { id: string; name: string; price_usd: number }[];
+    reachedOut?: boolean;
+    queried?: boolean;
     triedDowngrade?: boolean;
     upgraded?: boolean;
     to?: string;
@@ -123,10 +129,39 @@ export async function runResolve(opts: {
 
   const tools: ToolDef[] = [
     {
-      name: "discover_operator",
-      description: "Discover the operator's agent from its domain and learn its capabilities.",
+      name: "lookup_line",
+      description:
+        "Look up a subscriber in Globex's own records: the line id, the mobile operator that serves it, and that operator's domain. Use this first to find who is responsible for the requested action.",
+      input: { subscriber: { type: "string", required: true } },
+      run: async (args) => {
+        onLog({ channel: "mcp", text: `call lookup_line(${JSON.stringify(args)})` });
+        const rec = (await mcpCallJson(mcp, "lookup_line", args)) as {
+          line_id: string; operator_name: string; operator_domain: string;
+        };
+        onLog({ channel: "mcp", text: `response ${JSON.stringify(rec)}`, data: rec });
+        s.domain = rec.operator_domain;
+        // (b) — who to reach, resolved from data, not hardcoded
+        onLog({
+          channel: "boundary",
+          text: `responsible party: ${rec.operator_name} (${rec.operator_domain}) — read from Globex's own line record, not hardcoded`,
+        });
+        return rec;
+      },
+    },
+    {
+      name: "discover_provider",
+      description:
+        "Given an external organization's domain, discover its published agent and the capabilities it offers (reads /robots.txt, then /.well-known/agent, then each capability). Use this to learn what an outside company can do before calling it.",
       input: { domain: { type: "string", required: true } },
       run: async (args) => {
+        if (!s.reachedOut) {
+          s.reachedOut = true;
+          // (a) — the boundary: this work isn't Globex's to do internally
+          onLog({
+            channel: "boundary",
+            text: `this action belongs to an external organization, not Globex — reaching its published agent instead of doing it internally`,
+          });
+        }
         const found = await discover(String(args.domain), {
           onEvent: (e) => {
             if (e.step === "fetch-robots") onLog({ channel: "http", text: `GET ${e.url}` });
@@ -134,66 +169,90 @@ export async function runResolve(opts: {
             if (e.step === "fetch-manifest") onLog({ channel: "http", text: `GET ${e.url}` });
             if (e.step === "manifest") onLog({ channel: "http", text: `${e.manifest.organization.name}: ${e.manifest.capabilities.length} capabilities` });
             if (e.step === "fetch-capability") onLog({ channel: "http", text: `GET ${e.url}` });
-            if (e.step === "capability") onLog({ channel: "http", text: `${e.capability.id} (costs_money=${e.capability.terms.costs_money})` });
+            if (e.step === "capability") onLog({ channel: "http", text: `${e.capability.id} (costs_money=${e.capability.terms.costs_money}, reversible=${e.capability.terms.reversible})` });
           },
         });
         s.agent_endpoint = found.manifest.agent_endpoint;
         s.capabilities = found.capabilities;
-        return { agent_endpoint: s.agent_endpoint, capabilities: found.capabilities.map((c) => c.id) };
+        // Hand the model the discovered contracts so it can choose and call them.
+        return {
+          agent_endpoint: s.agent_endpoint,
+          capabilities: found.capabilities.map((c) => ({
+            id: c.id,
+            title: c.title,
+            description: c.description,
+            outcome: c.semantics.outcome,
+            input: c.input,
+            terms: c.terms,
+          })),
+        };
       },
     },
     {
-      name: "query_tariffs",
-      description: "Ask the operator which tariffs the line can move to.",
-      input: { line_id: { type: "string", required: true } },
-      run: async (args) => {
-        const cap = matchCapability(s.capabilities ?? [], { outcome: "tariff-options" })[0]!;
-        const res = await callCapability(s.agent_endpoint!, cap.id, { line_id: args.line_id });
-        const tariffs = (res.body as { tariffs: typeof s.options }).tariffs ?? [];
-        s.options = tariffs;
-        return { tariffs };
+      name: "call_capability",
+      description:
+        "Call one of the capabilities you discovered on the external organization's agent. Pass the capability's exact id and the input object it declares. The organization enforces its own terms — for example it refuses a downgrade — so respect the outcome it returns.",
+      input: {
+        capability_id: { type: "string", required: true, description: "The exact id returned by discover_provider." },
+        input: { type: "object", required: true, description: "The input the capability declares, e.g. { line_id, target_tariff_id }." },
       },
-    },
-    {
-      name: "change_tariff",
-      description: "Change the line to a target tariff. Downgrades are refused by the operator.",
-      input: { line_id: { type: "string", required: true }, target_tariff_id: { type: "string", required: true } },
       run: async (args) => {
-        const res = await callCapability(s.agent_endpoint!, "telecom.line.tariff.change", {
-          line_id: args.line_id,
-          target_tariff_id: args.target_tariff_id,
+        const capId = String(args.capability_id);
+        const input = (args.input ?? {}) as Record<string, unknown>;
+        const res = await callCapability(s.agent_endpoint!, capId, input, {
+          onEvent: (e) => { if (e.step === "note") onLog({ channel: "http", text: e.message }); },
         });
-        if (res.status === 409) onLog({ channel: "policy", text: `refused: ${(res.body as { reason: string }).reason}` });
+        const body = res.body as { tariffs?: typeof s.options; reason?: string };
+        if (res.status === 409) onLog({ channel: "policy", text: `refused: ${body.reason ?? "not allowed"}` });
+        if (body.tariffs) s.options = body.tariffs;
         return { status: res.status, ...(res.body as object) };
       },
     },
   ];
 
+  // Deterministic mode mirrors the same skill with no LLM: identify → discover →
+  // (query) → try a downgrade (refused) → upgrade. Capability ids come from what
+  // was discovered (matchCapability), never hardcoded.
   const provider = opts.provider ??
     scriptedProvider("deterministic", () => {
-      if (!s.agent_endpoint) return { toolCall: { tool: "discover_operator", args: { domain: ticket.operator_domain } } };
-      if (!s.options) return { toolCall: { tool: "query_tariffs", args: { line_id: ticket.line_id } } };
-      if (!s.triedDowngrade) {
-        s.triedDowngrade = true;
-        return { toolCall: { tool: "change_tariff", args: { line_id: ticket.line_id, target_tariff_id: "starter" } } };
+      if (!s.domain) return { toolCall: { tool: "lookup_line", args: { subscriber: ticket.subscriber } } };
+      if (!s.capabilities) return { toolCall: { tool: "discover_provider", args: { domain: s.domain } } };
+      const queryCap = matchCapability(s.capabilities, { outcome: "tariff-options" })[0];
+      const changeCap = matchCapability(s.capabilities, { outcome: "tariff-change" })[0];
+      if (!s.queried && queryCap) {
+        s.queried = true;
+        return { toolCall: { tool: "call_capability", args: { capability_id: queryCap.id, input: { line_id: ticket.line_id } } } };
       }
-      if (!s.upgraded) {
+      if (!s.triedDowngrade && changeCap) {
+        s.triedDowngrade = true;
+        return { toolCall: { tool: "call_capability", args: { capability_id: changeCap.id, input: { line_id: ticket.line_id, target_tariff_id: "starter" } } } };
+      }
+      if (!s.upgraded && changeCap && s.options?.length) {
         s.upgraded = true;
         const pick = s.options.at(-1)!;
         s.to = pick.name;
-        return { toolCall: { tool: "change_tariff", args: { line_id: ticket.line_id, target_tariff_id: pick.id } } };
+        return { toolCall: { tool: "call_capability", args: { capability_id: changeCap.id, input: { line_id: ticket.line_id, target_tariff_id: pick.id } } } };
       }
-      return { text: `Approved and done. ${ticket.line_id} moved to ${s.to} on ${ticket.operator_name}.` };
+      return { text: `Approved and done. ${ticket.line_id} moved to ${s.to ?? "a higher tariff"} on ${ticket.operator_name}.` };
     });
 
   const reply = await runAgent({
     provider,
-    system: "You are Globex operations. Resolve the ticket via the operator's agent. Refuse downgrades.",
+    system:
+      "You are Globex Marketing's operations agent, resolving one internal ticket. " +
+      "Globex keeps its own records but CANNOT perform actions that belong to another organization — " +
+      "changing a mobile line's tariff is the operator's action, not Globex's. When a ticket needs such an action, follow this skill: " +
+      "(1) identify the responsible external organization from Globex's records with lookup_line — never assume who it is, read it from the record; " +
+      "(2) discover that organization's published agent and capabilities at its domain with discover_provider; " +
+      "(3) read the discovered capabilities and their terms, pick the one that matches the request, and call it with call_capability using its exact id. " +
+      "Never hardcode a provider or a capability id. Upgrades only — if you attempt a downgrade the operator will refuse it, and that is their rule to enforce. Finish by stating the outcome.",
     tools,
-    message: `Resolve ticket ${ticket.id}: ${ticket.request}`,
+    message: `Resolve ticket ${ticket.id}. Subscriber: ${ticket.subscriber}. Line: ${ticket.line_id}. Request: "${ticket.request}".`,
     onEvent: agentEvents(onLog),
+    maxSteps: 12,
   });
 
+  await mcp.close();
   return resolveTicket(ticket.id, reply);
 }
 
