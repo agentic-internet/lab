@@ -328,6 +328,11 @@ export async function runOpsChatA2A(opts: {
     });
     s.endpoint = found.manifest.agent_endpoint ?? "";
     s.caps = found.capabilities;
+    onLog({
+      channel: "agent",
+      text: `understood ${ticket.operator_name}'s agent — ${s.caps.length} capabilities: ${s.caps.map((c) => `${c.id} (${c.semantics.outcome})`).join(", ")}`,
+      data: s.caps.map((c) => ({ id: c.id, outcome: c.semantics.outcome, verbs: c.semantics.verbs, aliases: c.semantics.aliases, input: c.input, terms: c.terms })),
+    });
     return { endpoint: s.endpoint, caps: s.caps };
   };
 
@@ -335,6 +340,11 @@ export async function runOpsChatA2A(opts: {
     const { endpoint, caps } = await discoverOperator();
     const cap = matchCapability(caps, { outcome: "tariff-options" })[0];
     if (!cap) return [];
+    onLog({
+      channel: "agent",
+      text: `matched need "available tariffs" → ${cap.id} by meaning (its own local name, no shared vocabulary)`,
+      data: { need: "tariff-options", matched: cap.id, semantics: cap.semantics },
+    });
     const res = await callCapability(endpoint, cap.id, { line_id: ticket.line_id });
     const tariffs = ((res.body as { tariffs?: TariffOption[] }).tariffs ?? []) as TariffOption[];
     onLog({
@@ -398,6 +408,11 @@ export async function runOpsChatA2A(opts: {
         const { endpoint, caps } = await discoverOperator();
         const cap = matchCapability(caps, { outcome: "tariff-change" })[0];
         if (!cap) return { ok: false, reason: "operator offers no change capability" };
+        onLog({
+          channel: "agent",
+          text: `matched need "change tariff" → ${cap.id} by meaning; its terms say costs_money=${cap.terms.costs_money}, reversible=${cap.terms.reversible}`,
+          data: { need: "tariff-change", matched: cap.id, semantics: cap.semantics, terms: cap.terms },
+        });
         const res = await callCapability(endpoint, cap.id, { line_id: ticket.line_id, target_tariff_id: target });
         const body = res.body as { ok?: boolean; to?: string; reason?: string };
         onLog({
