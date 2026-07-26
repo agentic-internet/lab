@@ -1,4 +1,5 @@
 import { reset as resetTickets } from "@/src/tickets";
+import { reset as resetEscalations } from "@/src/escalations";
 import { checkPassword } from "@/src/settings";
 
 export const runtime = "nodejs";
@@ -10,6 +11,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "unauthorized" }, { status: 401 });
   }
   resetTickets();
+  resetEscalations();
 
   const acme = process.env.ACME_URL ?? "http://localhost:3001";
   let acmeOk = false;

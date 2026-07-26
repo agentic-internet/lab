@@ -3,6 +3,7 @@ import { discover, matchCapability, callCapability } from "@ail/capability-clien
 import { connectGlobexMcp, mcpCallJson } from "@ail/mcp-servers";
 import type { Capability } from "@ail/shared";
 import { createTicket, getTicket, resolveTicket, type Ticket } from "./tickets";
+import { createEscalation, forTicket } from "./escalations";
 
 /**
  * Two phases, matching the design: a Globex employee can't change their own line.
@@ -135,6 +136,106 @@ export async function runIntake(opts: {
 
   await mcp.close();
   return s.ticket;
+}
+
+/* ------------------------------------------------ ops chat (agent→human) --- */
+
+/**
+ * The operations assistant for one ticket, in the AGENT→HUMAN world. It does NOT
+ * touch the operator — it only helps a human: raise the change to a manager for
+ * confirmation, and close the task once the operator has applied the change by
+ * hand in the operator's business portal. Nothing here reaches outward.
+ */
+export async function runOpsChat(opts: {
+  ticketId: string;
+  message: string;
+  history?: { role: "user" | "assistant"; text: string }[];
+  onLog: OnLog;
+  provider?: LLMProvider;
+}): Promise<void> {
+  const { ticketId, message, onLog } = opts;
+  const ticket = getTicket(ticketId);
+  if (!ticket) {
+    onLog({ channel: "policy", text: `unknown ticket ${ticketId}` });
+    return;
+  }
+
+  const tools: ToolDef[] = [
+    {
+      name: "escalate_to_manager",
+      description:
+        "Send this ticket to a manager for confirmation before any change is made. The manager " +
+        "approves it in their queue. Use this first — operations cannot approve its own change.",
+      input: { reason: { type: "string", required: true } },
+      run: async (args) => {
+        const e = createEscalation({ ticket_id: ticket.id, employee: ticket.subscriber, summary: ticket.request });
+        onLog({ channel: "policy", text: `escalated to manager for confirmation — ${e.id} (${String(args.reason).slice(0, 60)})` });
+        return { escalation_id: e.id, status: e.status };
+      },
+    },
+    {
+      name: "check_manager_decision",
+      description: "Check whether the manager has approved the confirmation for this ticket.",
+      input: {},
+      run: async () => {
+        const e = forTicket(ticket.id);
+        onLog({ channel: "policy", text: `manager decision: ${e?.status ?? "none"}` });
+        return { status: e?.status ?? "none" };
+      },
+    },
+    {
+      name: "close_task",
+      description:
+        "Close the ticket as done. Only after the manager approved AND the operator has applied the " +
+        "change by hand in the operator's business portal. Refused if not yet approved.",
+      input: {},
+      run: async () => {
+        const e = forTicket(ticket.id);
+        if (!e || e.status !== "approved") {
+          onLog({ channel: "policy", text: "cannot close — manager hasn't approved yet" });
+          return { ok: false, reason: "not approved by manager" };
+        }
+        const done = resolveTicket(ticket.id, "Applied by hand in Acme's business portal (manager-approved).");
+        onLog({ channel: "policy", text: `ticket ${ticket.id} closed` });
+        return { ok: Boolean(done), status: "done" };
+      },
+    },
+  ];
+
+  const provider = opts.provider ??
+    scriptedProvider("deterministic", (ctx) => {
+      const last = [...ctx.messages].reverse().find((m) => m.role === "user")?.content ?? message;
+      const esc = forTicket(ticket.id);
+      if (/\b(close|done|finished|complete|kapat|bitti|tamamla)\b/i.test(last)) {
+        return { toolCall: { tool: "close_task", args: {} } };
+      }
+      if (!esc && /\b(escalate|manager|confirm|approve|onay|yönetici|yükselt)\b/i.test(last)) {
+        return { toolCall: { tool: "escalate_to_manager", args: { reason: ticket.request } } };
+      }
+      if (!esc) {
+        return {
+          text: `This is ${ticket.subscriber}'s line on ${ticket.operator_name} — operations can't change it directly. Shall I escalate it to a manager for confirmation?`,
+        };
+      }
+      if (esc.status === "approved") {
+        return { text: "The manager approved. Apply the change by hand in Acme's business portal, then tell me to close the task." };
+      }
+      return { text: `Escalated to the manager (${esc.id}). Waiting on their approval before anything is changed.` };
+    });
+
+  await runAgent({
+    provider,
+    history: opts.history,
+    system:
+      `You are Globex operations' assistant for ticket ${ticket.id}: ${ticket.subscriber}, line ${ticket.line_id} on ${ticket.operator_name}, request "${ticket.request}". ` +
+      "You CANNOT change the operator's line yourself, and you must not contact the operator. The process is human-driven: " +
+      "(1) escalate_to_manager for confirmation; (2) once check_manager_decision shows approved, the operator applies the change by hand in Acme's business portal; (3) close_task when the operator says it's done. " +
+      "Never close before the manager approves. Keep replies short and plain.",
+    tools,
+    message,
+    onEvent: agentEvents(onLog),
+    maxSteps: 6,
+  });
 }
 
 /* --------------------------------------------------------------- resolve --- */

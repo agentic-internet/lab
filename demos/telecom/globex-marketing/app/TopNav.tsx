@@ -10,6 +10,7 @@ const ACME = process.env.NEXT_PUBLIC_ACME_URL ?? "http://localhost:3001";
 const MAIN = [
   { href: "/", label: "Employee", active: (p: string) => p === "/" },
   { href: "/ops", label: "Operations", active: (p: string) => p.startsWith("/ops") },
+  { href: "/manager", label: "Manager", active: (p: string) => p.startsWith("/manager") },
 ];
 
 const SECONDARY = [
