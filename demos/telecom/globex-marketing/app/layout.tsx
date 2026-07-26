@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { TopNav } from "./TopNav";
 
 export const metadata: Metadata = {
   title: "Globex Marketing — Internal Assistant",
@@ -18,6 +19,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           idea.{" "}
           <a href="/guide" className="font-medium underline">What is this? →</a>
         </div>
+        <TopNav />
         {children}
       </body>
     </html>

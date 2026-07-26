@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
 interface Ticket {
   id: string;
@@ -28,10 +27,9 @@ export default function GlobexDb() {
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
-      <div className="flex items-center">
-        <h1 className="text-lg font-semibold text-[var(--globex)]">Globex Marketing — data (read only)</h1>
-        <Link href="/ops" className="ml-auto text-sm text-slate-500 underline">Operations →</Link>
-      </div>
+      <h1 className="text-lg font-semibold text-slate-700">
+        Data <span className="font-normal text-slate-400">— ticket store (read only)</span>
+      </h1>
       <p className="mt-1 text-xs text-slate-400">Live view of the ticket store. Refreshes automatically.</p>
 
       <div className="mt-6 overflow-x-auto rounded-lg border border-slate-200">

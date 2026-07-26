@@ -48,15 +48,10 @@ export default function Ops() {
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
-      <header className="flex items-center gap-3">
-        <div className="h-8 w-8 rounded-lg bg-slate-700" />
-        <span className="text-xl font-semibold text-slate-700">Globex Marketing</span>
-        <span className="text-slate-400">·</span>
-        <span className="text-slate-500">Operations</span>
-        <Link href="/" className="ml-auto text-sm text-slate-500 underline hover:text-slate-700">
-          ← Employee assistant
-        </Link>
-      </header>
+      <h1 className="text-lg font-semibold text-slate-700">Operations</h1>
+      <p className="mt-1 text-sm text-slate-400">
+        Approve and resolve the tickets employees raise — watch the log panel as the agent works.
+      </p>
 
       <div className="mt-6 flex items-center gap-3">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
