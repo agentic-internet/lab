@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-/** Three primary screens, plus the read-only/data links kept small on the right. */
+const ACME = process.env.NEXT_PUBLIC_ACME_URL ?? "http://localhost:3001";
+
+/** Globex's own two screens. "Admin" isn't a Globex screen — to change a line,
+ *  ops goes to the operator's (Acme's) business portal, so it's an external link. */
 const MAIN = [
   { href: "/", label: "Employee", active: (p: string) => p === "/" },
   { href: "/ops", label: "Operations", active: (p: string) => p.startsWith("/ops") },
-  { href: "/admin", label: "Admin", active: (p: string) => p.startsWith("/admin") },
 ];
 
 const SECONDARY = [
@@ -38,6 +40,16 @@ export function TopNav() {
             {t.label}
           </Link>
         ))}
+
+        <a
+          href={`${ACME}/admin`}
+          target="_blank"
+          rel="noreferrer"
+          title="Acme's business portal — where ops changes a line by hand"
+          className="rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+        >
+          Admin ↗
+        </a>
 
         <div className="ml-auto flex items-center gap-4 text-xs text-slate-400">
           {SECONDARY.map((s) => (

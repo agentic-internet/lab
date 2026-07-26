@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 interface Line {
   line_id: string;
   subscriber: string;
+  holder?: string;
   tariff_id: string;
   tariff_name: string;
 }
@@ -39,8 +40,8 @@ export default function AcmeDb() {
 
       <h2 className="mt-8 text-xs font-semibold uppercase tracking-wide text-slate-500">lines</h2>
       <Table
-        head={["line_id", "subscriber", "tariff_id", "tariff"]}
-        rows={lines.map((l) => [l.line_id, l.subscriber, l.tariff_id, l.tariff_name])}
+        head={["line_id", "customer", "employee", "tariff_id", "tariff"]}
+        rows={lines.map((l) => [l.line_id, l.subscriber, l.holder ?? "—", l.tariff_id, l.tariff_name])}
       />
 
       <h2 className="mt-8 text-xs font-semibold uppercase tracking-wide text-slate-500">

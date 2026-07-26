@@ -9,7 +9,8 @@ import { SEED_TARIFFS, SEED_ACTIVE_TARIFF, makeTariff, type Tariff } from "./dat
 
 export interface Line {
   line_id: string;
-  subscriber: string;
+  subscriber: string; // the business customer (e.g. Globex Marketing)
+  holder?: string; // the employee the line belongs to
   tariff_id: string;
 }
 
@@ -26,8 +27,13 @@ const WINDOW = 2;
 function seed(): State {
   return {
     tariffs: [...SEED_TARIFFS],
-    // the Globex marketer's line, sitting on the middle tariff
-    lines: [{ line_id: "GLX-4471", subscriber: "Globex Marketing", tariff_id: SEED_ACTIVE_TARIFF }],
+    // Globex Marketing's employees. GLX-4471 (the marketer) is the demo line,
+    // sitting on the middle tariff; the others make it read like a real account.
+    lines: [
+      { line_id: "GLX-4471", subscriber: "Globex Marketing", holder: "Jordan Blake", tariff_id: SEED_ACTIVE_TARIFF },
+      { line_id: "GLX-4472", subscriber: "Globex Marketing", holder: "Sam Ortega", tariff_id: "PKC-04" },
+      { line_id: "GLX-4473", subscriber: "Globex Marketing", holder: "Priya Nair", tariff_id: "PKC-03" },
+    ],
   };
 }
 

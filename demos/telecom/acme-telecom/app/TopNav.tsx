@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 /** Acme's own site nav: the marketing home, the operator admin panel, and the data view. */
 const MAIN = [
   { href: "/", label: "Home", active: (p: string) => p === "/" },
-  { href: "/admin", label: "Admin", active: (p: string) => p.startsWith("/admin") },
+  { href: "/admin", label: "Business portal", active: (p: string) => p.startsWith("/admin") },
   { href: "/db", label: "Data", active: (p: string) => p.startsWith("/db") },
 ];
 
