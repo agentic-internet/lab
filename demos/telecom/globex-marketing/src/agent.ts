@@ -80,7 +80,10 @@ export async function runIntake(opts: {
 
   await runAgent({
     provider,
-    system: "You are Globex's internal assistant. Find the line and open a ticket. Never change a line directly.",
+    system:
+      `You are Globex's internal assistant. The signed-in subscriber is "${subscriber}" — ` +
+      "use that exact identifier with lookup_line; never ask the user who they are. " +
+      "Find the line, then open a ticket for operations to review. Never change a line directly.",
     tools,
     message,
     onEvent: agentEvents(onLog),
