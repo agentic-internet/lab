@@ -9,3 +9,8 @@ dist/
 *.sqlite
 *.db
 .DS_Store
+
+# runtime demo state
+*.state.json
+data/
+next-env.d.ts
