@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type Channel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel" | "boundary";
 export interface LogEntry {
   channel: Channel;
   text: string;
+  /** Structured request/response payload — shown when the line is clicked. */
+  data?: unknown;
 }
 
 const CH: Record<Channel, { label: string; cls: string; icon: string }> = {
@@ -48,9 +50,12 @@ export async function streamAgent(
 
 export function LogPanel({ log, title }: { log: LogEntry[]; title?: string }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [sel, setSel] = useState<number | null>(null);
   useEffect(() => {
     ref.current?.scrollTo(0, ref.current.scrollHeight);
   }, [log]);
+
+  const selected = sel != null ? log[sel] : null;
 
   return (
     <section className="rounded-xl border border-slate-200 bg-slate-900 p-5">
@@ -59,20 +64,45 @@ export function LogPanel({ log, title }: { log: LogEntry[]; title?: string }) {
       </h2>
       <div ref={ref} className="mt-4 h-96 overflow-y-auto font-mono text-xs leading-relaxed">
         {log.length === 0 && (
-          <p className="text-slate-600">Real MCP calls, discovery, and agent-to-agent calls appear here.</p>
+          <p className="text-slate-600">Real MCP calls, discovery, and agent-to-agent calls appear here. Click a line for its request/response.</p>
         )}
         {log.map((e, i) => {
           const c = CH[e.channel];
           return (
-            <div key={i} className="flex gap-2 py-0.5">
+            <button
+              key={i}
+              onClick={() => setSel(sel === i ? null : i)}
+              className={"flex w-full gap-2 rounded py-0.5 text-left hover:bg-slate-800/70 " + (sel === i ? "bg-slate-800" : "")}
+            >
               <span className="w-20 shrink-0 text-slate-500">
                 {c.icon} {c.label}
               </span>
               <span className={"break-all " + c.cls}>{e.text}</span>
-            </div>
+            </button>
           );
         })}
       </div>
+
+      {selected && (
+        <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950 p-3 font-mono text-xs">
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">
+              {CH[selected.channel].icon} {CH[selected.channel].label} — detail
+            </span>
+            <button onClick={() => setSel(null)} className="text-slate-500 hover:text-slate-300">
+              close ✕
+            </button>
+          </div>
+          <p className={"mt-2 break-all " + CH[selected.channel].cls}>{selected.text}</p>
+          {selected.data != null ? (
+            <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-all text-slate-400">
+              {JSON.stringify(selected.data, null, 2)}
+            </pre>
+          ) : (
+            <p className="mt-2 text-slate-600">No structured request/response for this line.</p>
+          )}
+        </div>
+      )}
     </section>
   );
 }

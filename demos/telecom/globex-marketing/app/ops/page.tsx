@@ -18,12 +18,14 @@ interface Ticket {
 interface Escalation {
   id: string;
   ticket_id: string;
-  status: "pending" | "approved";
+  status: "pending" | "approved" | "rejected";
+  chosen_tariff_id?: string;
 }
 type Mode = "agent-to-agent" | "agent-to-human";
 type Chat = { role: "user" | "assistant"; text: string };
 
-const OPS_PRESETS = ["Escalate this to a manager", "Close the task"];
+const A2H_PRESETS = ["What is their current package?", "Escalate this to a manager", "Close the task"];
+const A2A_PRESETS = ["Which tariffs are available?", "Escalate to a manager", "Apply the approved upgrade"];
 
 export default function Ops() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -66,17 +68,6 @@ export default function Ops() {
     await streamAgent("/api/ops-chat", { ticketId: selected, message, history }, (e) => {
       if (e.channel === "assistant") setChat((c) => [...c, { role: "assistant", text: e.text }]);
       else if (e.channel !== "user") setLog((l) => [...l, e]);
-    });
-    setRunning(false);
-    await refresh();
-  }
-
-  async function autoResolve() {
-    if (running || !selected) return;
-    setRunning(true);
-    setLog([]);
-    await streamAgent("/api/resolve", { ticketId: selected }, (e) => {
-      if (e.channel !== "user") setLog((l) => [...l, e]);
     });
     setRunning(false);
     await refresh();
@@ -170,38 +161,38 @@ export default function Ops() {
                   {ticket.subscriber} · {ticket.line_id} · {ticket.operator_name}
                 </p>
 
-                {flow === "agent-to-human" ? (
-                  <div className="mt-4 border-t border-slate-100 pt-4">
-                    {esc?.status === "approved" && ticket.status === "open" && (
-                      <a
-                        href={`${ACME}/admin`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mb-3 inline-block rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600"
-                      >
-                        Manager approved — open Acme Business Portal ↗ to apply the change by hand
-                      </a>
-                    )}
-                    <ChatBox
-                      chat={chat}
-                      running={running}
-                      input={input}
-                      setInput={setInput}
-                      onSend={send}
-                      disabled={ticket.status === "done"}
-                    />
-                  </div>
-                ) : (
-                  <div className="mt-4 border-t border-slate-100 pt-4">
-                    <button
-                      onClick={autoResolve}
-                      disabled={running || ticket.status === "done"}
-                      className="rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white disabled:opacity-40"
+                <div className="mt-4 border-t border-slate-100 pt-4">
+                  {flow === "agent-to-human" && esc?.status === "approved" && ticket.status === "open" && (
+                    <a
+                      href={`${ACME}/admin`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mb-3 inline-block rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600"
                     >
-                      {running ? "Resolving…" : "Approve & resolve (agent to agent)"}
-                    </button>
-                  </div>
-                )}
+                      Manager approved — open Acme Business Portal ↗ to apply the change by hand
+                    </a>
+                  )}
+                  {flow === "agent-to-agent" && esc?.status === "approved" && ticket.status === "open" && (
+                    <div className="mb-3 rounded-lg bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700">
+                      Manager approved{esc.chosen_tariff_id ? ` · ${esc.chosen_tariff_id}` : ""} — say
+                      &ldquo;apply the upgrade&rdquo; and the agent makes the change (agent-to-agent).
+                    </div>
+                  )}
+                  {flow === "agent-to-agent" && esc?.status === "rejected" && (
+                    <div className="mb-3 rounded-lg bg-rose-50 px-3 py-1.5 text-xs text-rose-700">
+                      Manager rejected this request.
+                    </div>
+                  )}
+                  <ChatBox
+                    chat={chat}
+                    running={running}
+                    input={input}
+                    setInput={setInput}
+                    onSend={send}
+                    presets={flow === "agent-to-human" ? A2H_PRESETS : A2A_PRESETS}
+                    disabled={ticket.status === "done"}
+                  />
+                </div>
               </div>
 
               <LogPanel log={log} title="Activity" />
@@ -214,13 +205,14 @@ export default function Ops() {
 }
 
 function ChatBox({
-  chat, running, input, setInput, onSend, disabled,
+  chat, running, input, setInput, onSend, presets, disabled,
 }: {
   chat: Chat[];
   running: boolean;
   input: string;
   setInput: (v: string) => void;
   onSend: (m: string) => void;
+  presets: string[];
   disabled: boolean;
 }) {
   return (
@@ -250,7 +242,7 @@ function ChatBox({
       {!disabled && (
         <>
           <div className="mt-3 flex flex-wrap gap-2">
-            {OPS_PRESETS.map((p) => (
+            {presets.map((p) => (
               <button
                 key={p}
                 onClick={() => onSend(p)}

@@ -1,5 +1,5 @@
-import { runOpsChat, type LogEntry } from "@/src/agent";
-import { pickProvider, consumeRateIfLive } from "@/src/settings";
+import { runOpsChat, runOpsChatA2A, type LogEntry } from "@/src/agent";
+import { pickProvider, consumeRateIfLive, getSettings } from "@/src/settings";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +20,8 @@ export async function POST(request: Request) {
       const { provider, note } = pickProvider();
       if (note) send({ channel: "policy", text: note } satisfies LogEntry);
       try {
-        await runOpsChat({ ticketId, message, history, provider, onLog: (e: LogEntry) => send(e) });
+        const run = getSettings().flow === "agent-to-agent" ? runOpsChatA2A : runOpsChat;
+        await run({ ticketId, message, history, provider, onLog: (e: LogEntry) => send(e) });
       } catch (err) {
         send({ channel: "policy", text: `error: ${String(err)}` } satisfies LogEntry);
       } finally {

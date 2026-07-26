@@ -3,7 +3,7 @@ import { discover, matchCapability, callCapability } from "@ail/capability-clien
 import { connectGlobexMcp, mcpCallJson } from "@ail/mcp-servers";
 import type { Capability } from "@ail/shared";
 import { createTicket, getTicket, resolveTicket, type Ticket } from "./tickets";
-import { createEscalation, forTicket } from "./escalations";
+import { createEscalation, forTicket, type TariffOption } from "./escalations";
 
 /**
  * Two phases, matching the design: a Globex employee can't change their own line.
@@ -284,6 +284,191 @@ export async function runOpsChat(opts: {
   });
 
   await mcp.close();
+}
+
+/* ---------------------------------------------- ops chat (agent→agent) --- */
+
+/**
+ * The operations assistant for the AGENT→AGENT flow. Same human gate (manager
+ * approval), but the operator's own agent is reached for everything: it fetches
+ * the available tariffs from the operator, escalates to a manager WITH those
+ * options, and — once approved with a chosen tariff — performs the change
+ * agent-to-agent. Every hop is logged with its request/response.
+ */
+export async function runOpsChatA2A(opts: {
+  ticketId: string;
+  message: string;
+  history?: { role: "user" | "assistant"; text: string }[];
+  onLog: OnLog;
+  provider?: LLMProvider;
+}): Promise<void> {
+  const { ticketId, message, onLog } = opts;
+  const ticket = getTicket(ticketId);
+  if (!ticket) {
+    onLog({ channel: "policy", text: `unknown ticket ${ticketId}` });
+    return;
+  }
+
+  const s: { options?: TariffOption[]; endpoint?: string; caps?: Capability[] } = {};
+
+  // Discover the operator's agent from its domain — the real robots→well-known→
+  // capabilities walk, each step logged as an outward (different-org) hop.
+  const discoverOperator = async (): Promise<{ endpoint: string; caps: Capability[] }> => {
+    if (s.endpoint && s.caps) return { endpoint: s.endpoint, caps: s.caps };
+    onLog({ channel: "boundary", text: `this belongs to ${ticket.operator_name} — reaching its published agent (agent-to-agent)` });
+    const found = await discover(ticket.operator_domain, {
+      onEvent: (e) => {
+        if (e.step === "fetch-robots") onLog({ channel: "http", text: `GET ${e.url}`, data: { request: e.url } });
+        if (e.step === "found-agent-path") onLog({ channel: "http", text: `Agent: ${e.agentUrl}`, data: { agentUrl: e.agentUrl } });
+        if (e.step === "fetch-manifest") onLog({ channel: "http", text: `GET ${e.url}`, data: { request: e.url } });
+        if (e.step === "manifest") onLog({ channel: "http", text: `${e.manifest.organization.name}: ${e.manifest.capabilities.length} capabilities`, data: e.manifest });
+        if (e.step === "fetch-capability") onLog({ channel: "http", text: `GET ${e.url}`, data: { request: e.url } });
+        if (e.step === "capability") onLog({ channel: "http", text: `capability ${e.capability.id} (costs_money=${e.capability.terms.costs_money}, reversible=${e.capability.terms.reversible})`, data: e.capability });
+      },
+    });
+    s.endpoint = found.manifest.agent_endpoint ?? "";
+    s.caps = found.capabilities;
+    return { endpoint: s.endpoint, caps: s.caps };
+  };
+
+  const fetchOptions = async (): Promise<TariffOption[]> => {
+    const { endpoint, caps } = await discoverOperator();
+    const cap = matchCapability(caps, { outcome: "tariff-options" })[0];
+    if (!cap) return [];
+    const res = await callCapability(endpoint, cap.id, { line_id: ticket.line_id });
+    const tariffs = ((res.body as { tariffs?: TariffOption[] }).tariffs ?? []) as TariffOption[];
+    onLog({
+      channel: "http",
+      text: `queried ${cap.id} → ${tariffs.map((t) => t.name).join(", ") || "none"}`,
+      data: { request: { capability: cap.id, input: { line_id: ticket.line_id } }, response: res.body },
+    });
+    s.options = tariffs;
+    return tariffs;
+  };
+
+  const tools: ToolDef[] = [
+    {
+      name: "query_available_tariffs",
+      description:
+        "Ask the operator's agent (agent-to-agent) which tariffs this line can move up to. Use to " +
+        "answer 'what options are available?'. Returns the options.",
+      input: {},
+      run: async () => ({ tariffs: await fetchOptions() }),
+    },
+    {
+      name: "escalate_to_manager",
+      description:
+        "Send this upgrade to a manager for approval, WITH the available tariff options (fetched " +
+        "from the operator) for the manager to choose from. Operations cannot approve its own change.",
+      input: {},
+      run: async () => {
+        const options = s.options ?? (await fetchOptions());
+        const e = createEscalation({ ticket_id: ticket.id, employee: ticket.subscriber, summary: ticket.request, options });
+        onLog({ channel: "policy", text: `escalated to manager with ${options.length} options — ${e.id}`, data: { escalation: e.id, options } });
+        return { escalation_id: e.id, status: e.status, options };
+      },
+    },
+    {
+      name: "check_manager_decision",
+      description: "Check the manager's decision and chosen tariff for this ticket.",
+      input: {},
+      run: async () => {
+        const e = forTicket(ticket.id);
+        onLog({ channel: "policy", text: `manager: ${e?.status ?? "none"}${e?.chosen_tariff_id ? " → " + e.chosen_tariff_id : ""}` });
+        return { status: e?.status ?? "none", chosen_tariff_id: e?.chosen_tariff_id };
+      },
+    },
+    {
+      name: "apply_change",
+      description:
+        "After the manager approved and chose a tariff, perform the change on the operator's agent " +
+        "(agent-to-agent) and close the ticket. Refused unless approved.",
+      input: {},
+      run: async () => {
+        const e = forTicket(ticket.id);
+        if (!e || e.status !== "approved") {
+          onLog({ channel: "policy", text: "cannot apply — the manager hasn't approved" });
+          return { ok: false, reason: "not approved" };
+        }
+        const target = e.chosen_tariff_id;
+        if (!target) {
+          onLog({ channel: "policy", text: "cannot apply — the manager approved but chose no tariff" });
+          return { ok: false, reason: "no chosen tariff" };
+        }
+        const { endpoint, caps } = await discoverOperator();
+        const cap = matchCapability(caps, { outcome: "tariff-change" })[0];
+        if (!cap) return { ok: false, reason: "operator offers no change capability" };
+        const res = await callCapability(endpoint, cap.id, { line_id: ticket.line_id, target_tariff_id: target });
+        const body = res.body as { ok?: boolean; to?: string; reason?: string };
+        onLog({
+          channel: "http",
+          text: `change ${cap.id} → ${res.status} ${JSON.stringify(res.body)}`,
+          data: { request: { capability: cap.id, input: { line_id: ticket.line_id, target_tariff_id: target } }, response: res.body },
+        });
+        if (!body.ok) {
+          if (res.status === 409) onLog({ channel: "policy", text: `refused: ${body.reason}` });
+          return { ok: false, status: res.status, ...(res.body as object) };
+        }
+        resolveTicket(ticket.id, `Upgraded to ${body.to} agent-to-agent (manager-approved).`);
+        onLog({ channel: "policy", text: `ticket ${ticket.id} closed — now on ${body.to}` });
+        return { ok: true, to: body.to, status: "done" };
+      },
+    },
+  ];
+
+  const provider = opts.provider ??
+    scriptedProvider("deterministic", (ctx) => {
+      const last = [...ctx.messages].reverse().find((m) => m.role === "user")?.content ?? message;
+      const current = getTicket(ticket.id);
+      if (current?.status === "done") return { text: `Ticket ${ticket.id} is closed — the change is applied.` };
+      const esc = forTicket(ticket.id);
+      const wantsApply = /\b(upgrade|apply|proceed|do it|change it|make the change|yükselt|uygula|geçir)\b/i.test(last);
+      const wantsEscalate = /\b(escalate|manager|confirm|approval|onay|yönetici)\b/i.test(last);
+      const wantsOptions = /\b(tariff|available|option|package|plan|paket|hangi|which|current)\b/i.test(last);
+
+      if (wantsApply && esc?.status === "approved") return { toolCall: { tool: "apply_change", args: {} } };
+      if (wantsEscalate && (!esc || esc.status !== "approved")) return { toolCall: { tool: "escalate_to_manager", args: {} } };
+      if (wantsOptions && !s.options) return { toolCall: { tool: "query_available_tariffs", args: {} } };
+      if (wantsOptions && s.options) {
+        const opts2 = s.options.map((o) => `${o.name} (${o.data_gb}GB/${o.mins}m, $${o.price_usd})`).join(", ");
+        const tail = esc
+          ? esc.status === "approved"
+            ? ` The manager approved ${esc.chosen_tariff_id} — say "apply the upgrade" and I'll make the change.`
+            : esc.status === "rejected"
+              ? " The manager rejected this."
+              : " Escalated, awaiting the manager's choice."
+          : " Shall I escalate these to a manager for approval?";
+        return { text: `Options for ${ticket.line_id}: ${opts2}.${tail}` };
+      }
+      if (!esc) return { text: `This needs ${ticket.operator_name}. Ask "which tariffs are available?" and I'll fetch them agent-to-agent, or say "escalate to a manager".` };
+      if (esc.status === "approved") return { text: `The manager approved ${esc.chosen_tariff_id}. Say "apply the upgrade" and I'll make the change agent-to-agent.` };
+      if (esc.status === "rejected") return { text: "The manager rejected this request — nothing will change." };
+      return { text: `Escalated with options (${esc.id}). Waiting on the manager's decision.` };
+    });
+
+  const escNow = forTicket(ticket.id);
+  const statusLine = !escNow
+    ? "CURRENT STATUS: not yet escalated. Fetch options from the operator, then escalate to a manager with them."
+    : escNow.status === "approved"
+      ? `CURRENT STATUS: the manager APPROVED and chose tariff ${escNow.chosen_tariff_id}. On the operator's go-ahead, call apply_change to perform it agent-to-agent (this closes the ticket). Do not escalate again.`
+      : escNow.status === "rejected"
+        ? "CURRENT STATUS: the manager REJECTED this. Do not change anything."
+        : `CURRENT STATUS: escalated (${escNow.id}), awaiting the manager's decision. Do not apply changes yet; do not escalate again.`;
+
+  await runAgent({
+    provider,
+    history: opts.history,
+    system:
+      `You are Globex operations' assistant for ticket ${ticket.id}: ${ticket.subscriber}, line ${ticket.line_id} on ${ticket.operator_name}, request "${ticket.request}". This is the AGENT-TO-AGENT flow. ` +
+      "You reach the operator's OWN agent for everything — you never drive a human portal. Process: " +
+      "(1) query_available_tariffs to fetch the options from the operator; (2) escalate_to_manager with those options for the manager to choose and approve or reject; (3) once approved, on the operator's go-ahead, apply_change to perform the manager's chosen tariff agent-to-agent, which closes the ticket. " +
+      "Never apply a change the manager hasn't approved. Keep replies short and plain. " +
+      statusLine,
+    tools,
+    message,
+    onEvent: agentEvents(onLog),
+    maxSteps: 8,
+  });
 }
 
 /* --------------------------------------------------------------- resolve --- */
