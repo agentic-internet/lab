@@ -124,6 +124,7 @@ export async function runResolve(opts: {
     capabilities?: Capability[];
     options?: { id: string; name: string; price_usd: number }[];
     reachedOut?: boolean;
+    authNoted?: boolean;
     queried?: boolean;
     triedDowngrade?: boolean;
     upgraded?: boolean;
@@ -202,6 +203,19 @@ export async function runResolve(opts: {
       run: async (args) => {
         const capId = String(args.capability_id);
         const input = (args.input ?? {}) as Record<string, unknown>;
+        if (!s.authNoted) {
+          s.authNoted = true;
+          // Reading /.well-known needs no trust; ACTING on the other side does. We
+          // don't solve that here — we assume it, and say so out loud. Brainstorm,
+          // not a claim: a provider-issued certificate (API-key-like), the way one
+          // issuer vouches at scale for Apple's push service — except each provider
+          // is the issuer for its own partners. Strangers with no such certificate
+          // stay the hard, open part.
+          onLog({
+            channel: "boundary",
+            text: "auth: assumed — Globex presents a certificate Acme issued it out-of-band; Acme trusts its own certificate. Stubbed here. How a provider vouches for a partner's agent (and how parties with no such certificate establish trust) is an open question, not a claim.",
+          });
+        }
         const res = await callCapability(s.agent_endpoint!, capId, input, {
           onEvent: (e) => { if (e.step === "note") onLog({ channel: "http", text: e.message }); },
         });

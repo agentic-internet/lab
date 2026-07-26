@@ -63,6 +63,15 @@ export default function Guide() {
         switched on from the operator&apos;s control panel.
       </div>
 
+      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-slate-600">
+        <b>One thing we assume, and don&apos;t solve here.</b> Reading Acme&apos;s published
+        description needs no trust — but <i>acting</i> on Acme&apos;s side does. This demo assumes
+        Globex&apos;s agent is already trusted by Acme (imagine a certificate Acme issued it, the way
+        an API key works today). How a provider vouches for a partner&apos;s agent — and how two
+        parties with no prior relationship establish trust at all — is an open question we&apos;re
+        thinking about out loud, not a claim we&apos;re making.
+      </div>
+
       <p className="mt-8 text-xs text-slate-400">
         Fictional companies, built to explore an idea:{" "}
         <a href="https://github.com/agentic-internet/agentic-internet" className="underline">
