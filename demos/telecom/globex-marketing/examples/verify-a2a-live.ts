@@ -6,6 +6,7 @@
  *
  * Run Acme first, then: ACME_URL=http://localhost:3001 pnpm dlx tsx examples/verify-a2a-live.ts
  */
+import { scriptedProvider } from "@ail/agent-core";
 import { runOpsChatA2A } from "../src/agent";
 import { createTicket, getTicket, reset as resetTickets } from "../src/tickets";
 import { forTicket, decideEscalation, reset as resetEsc, type TariffOption } from "../src/escalations";
@@ -43,6 +44,37 @@ console.log("\n── 4) OPS applies the change (grant reused, agent-to-agent) �
 await runOpsChatA2A({ ticketId: ticket.id, message: "apply the upgrade", onLog: show });
 
 const done = getTicket(ticket.id);
-const ok = done?.status === "done";
-console.log(`\n${ok ? "PASS" : "FAIL"}: ticket ${done?.id} status=${done?.status} — ${done?.resolution ?? ""}`);
-process.exit(ok ? 0 : 1);
+const happyOk = done?.status === "done";
+console.log(`\n${happyOk ? "PASS" : "FAIL"}: ticket ${done?.id} status=${done?.status} — ${done?.resolution ?? ""}`);
+
+// Negative: an agent that skips authorization and reaches out anyway is blocked
+// at the boundary — no grant, no call.
+console.log("\n── 5) NEGATIVE: reach out with no grant → blocked ──");
+const t2 = createTicket({
+  subscriber: "Jordan Blake",
+  line_id: "GLX-4471",
+  operator_name: "Acme Telecom",
+  operator_domain: process.env.ACME_URL ?? "http://localhost:3001",
+  request: "Upgrade my plan.",
+});
+let blocked = false;
+let fetched = false;
+const skipAuth = scriptedProvider("skip-auth", (ctx) => {
+  const calls = ctx.messages.filter((m) => m.role === "tool").length;
+  if (calls === 0) return { toolCall: { tool: "query_available_tariffs", args: {} } };
+  return { text: "gave up — I was blocked." };
+});
+await runOpsChatA2A({
+  ticketId: t2.id,
+  message: "which tariffs are available?",
+  provider: skipAuth,
+  onLog: (e) => {
+    show(e);
+    if (e.channel === "hook" && /BLOCKED/.test(e.text)) blocked = true;
+    if (e.channel === "http" && /queried/.test(e.text)) fetched = true;
+  },
+});
+const negOk = blocked && !fetched;
+console.log(`\n${negOk ? "PASS" : "FAIL"}: unauthorized reach ${blocked ? "was blocked" : "was NOT blocked"}${fetched ? " but options were fetched!" : ""}`);
+
+process.exit(happyOk && negOk ? 0 : 1);
