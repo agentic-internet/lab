@@ -1,7 +1,7 @@
 import { runAgent, scriptedProvider, type ToolDef, type LLMProvider } from "@ail/agent-core";
-import { discover, matchCapability, callCapability } from "@ail/capability-client";
-import { connectGlobexMcp, mcpCallJson } from "@ail/mcp-servers";
-import type { Capability } from "@ail/shared";
+import { discover, matchCapability, callCapability, callExternal, isRefused } from "@ail/capability-client";
+import { connectGlobexMcp, connectGlobexResolver, mcpCallJson } from "@ail/mcp-servers";
+import { resolverSecret, type Capability, type Grant } from "@ail/shared";
 import { createTicket, getTicket, resolveTicket, type Ticket } from "./tickets";
 import { createEscalation, forTicket, type TariffOption } from "./escalations";
 
@@ -13,7 +13,7 @@ import { createEscalation, forTicket, type TariffOption } from "./escalations";
  * Both emit one unified stream of typed log entries — what the log panel shows.
  */
 
-export type LogChannel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel" | "boundary" | "reason" | "hook";
+export type LogChannel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel" | "boundary" | "reason" | "hook" | "resolver";
 export interface LogEntry {
   channel: LogChannel;
   text: string;
@@ -323,7 +323,78 @@ export async function runOpsChatA2A(opts: {
     return;
   }
 
-  const s: { options?: TariffOption[]; endpoint?: string; caps?: Capability[] } = {};
+  // Globex's own MCPs: the internal directory (gap detection reads its tools) and
+  // the private policy resolver (the governed permission to reach outside).
+  const dirMcp = await connectGlobexMcp();
+  const resolverMcp = await connectGlobexResolver();
+
+  const s: { options?: TariffOption[]; endpoint?: string; caps?: Capability[]; grant?: Grant } = {};
+
+  // Action verbs that describe the OUTWARD action, matched against Globex's own
+  // tool descriptions. If none of Globex's tools speak to changing a tariff, the
+  // work is external — the boundary recognised by not finding itself capable,
+  // not by a sentence we wrote into the prompt.
+  const NEED_VERBS = ["change a line", "change a tariff", "upgrade a plan", "switch the tariff", "modify a subscription"];
+
+  // The governed boundary: (1) inward gap detection, then (2) ask Globex's OWN
+  // resolver for a scoped, short-lived grant. Cached until it nears expiry.
+  const authorizeReach = async (): Promise<{ ok: true; grant: Grant } | { ok: false; reason: string }> => {
+    if (s.grant && s.grant.expires_at > Date.now() + 5000) return { ok: true, grant: s.grant };
+
+    const listed = await dirMcp.listTools();
+    const names = listed.tools.map((t) => t.name);
+    const matched = listed.tools
+      .filter((t) => {
+        const hay = `${t.name} ${t.description ?? ""}`.toLowerCase();
+        return NEED_VERBS.some((v) => hay.includes(v));
+      })
+      .map((t) => t.name);
+    onLog({
+      channel: "boundary",
+      text:
+        `gap check — Globex's own capabilities [${names.join(", ")}]: ` +
+        (matched.length
+          ? `handled internally by ${matched.join(", ")}`
+          : `none performs "change a tariff", so this belongs to an external organization`),
+      data: { internal_tools: names, matched, need: "tariff-change" },
+    });
+
+    onLog({
+      channel: "resolver",
+      text: `asking Globex's policy resolver: am I cleared to reach ${ticket.operator_name} for a tariff change?`,
+      data: { partner_domain: ticket.operator_domain, outcome: "tariff-change" },
+    });
+    const dec = (await mcpCallJson(resolverMcp, "authorize_external", {
+      partner_domain: ticket.operator_domain,
+      outcome: "tariff-change",
+    })) as {
+      allowed: boolean;
+      reason?: string;
+      partner_name?: string;
+      scopes?: string[];
+      limits?: Record<string, number>;
+      grant?: Grant;
+    };
+    if (!dec.allowed || !dec.grant) {
+      onLog({
+        channel: "resolver",
+        text: `resolver DENIED — ${dec.reason ?? "not permitted"} → this becomes a request to a human, not an error`,
+        data: dec,
+      });
+      return { ok: false, reason: dec.reason ?? "not permitted by Globex policy" };
+    }
+    s.grant = dec.grant;
+    const ttl = Math.max(0, Math.round((dec.grant.expires_at - Date.now()) / 1000));
+    onLog({
+      channel: "resolver",
+      text:
+        `resolver authorized — ${dec.partner_name}, scopes [${(dec.scopes ?? []).join(", ")}]` +
+        `${dec.limits ? `, limits ${JSON.stringify(dec.limits)}` : ""}; grant ${dec.grant.id} (expires in ${ttl}s). ` +
+        `The outward call carries this grant and is refused without it.`,
+      data: dec,
+    });
+    return { ok: true, grant: s.grant };
+  };
 
   // Discover the operator's agent from its domain — the real robots→well-known→
   // capabilities walk, each step logged as an outward (different-org) hop.
@@ -351,6 +422,8 @@ export async function runOpsChatA2A(opts: {
   };
 
   const fetchOptions = async (): Promise<TariffOption[]> => {
+    const auth = await authorizeReach();
+    if (!auth.ok) return [];
     const { endpoint, caps } = await discoverOperator();
     const cap = matchCapability(caps, { outcome: "tariff-options" })[0];
     if (!cap) return [];
@@ -359,7 +432,16 @@ export async function runOpsChatA2A(opts: {
       text: `matched need "available tariffs" → ${cap.id} by meaning (its own local name, no shared vocabulary)`,
       data: { need: "tariff-options", matched: cap.id, semantics: cap.semantics },
     });
-    const res = await callCapability(endpoint, cap.id, { line_id: ticket.line_id });
+    const res = await callExternal(
+      auth.grant,
+      { partner_domain: ticket.operator_domain, agentEndpoint: endpoint, capabilityId: cap.id, outcome: cap.semantics.outcome },
+      { line_id: ticket.line_id },
+      { secret: resolverSecret(), onEvent: (e) => { if (e.step === "note") onLog({ channel: "http", text: e.message }); } },
+    );
+    if (isRefused(res)) {
+      onLog({ channel: "resolver", text: `call_external refused: ${res.reason}`, data: res });
+      return [];
+    }
     const tariffs = ((res.body as { tariffs?: TariffOption[] }).tariffs ?? []) as TariffOption[];
     onLog({
       channel: "http",
@@ -419,6 +501,11 @@ export async function runOpsChatA2A(opts: {
           onLog({ channel: "policy", text: "cannot apply — the manager approved but chose no tariff" });
           return { ok: false, reason: "no chosen tariff" };
         }
+        const auth = await authorizeReach();
+        if (!auth.ok) {
+          onLog({ channel: "resolver", text: `cannot apply — ${auth.reason}` });
+          return { ok: false, reason: auth.reason };
+        }
         const { endpoint, caps } = await discoverOperator();
         const cap = matchCapability(caps, { outcome: "tariff-change" })[0];
         if (!cap) return { ok: false, reason: "operator offers no change capability" };
@@ -427,7 +514,16 @@ export async function runOpsChatA2A(opts: {
           text: `matched need "change tariff" → ${cap.id} by meaning; its terms say costs_money=${cap.terms.costs_money}, reversible=${cap.terms.reversible}`,
           data: { need: "tariff-change", matched: cap.id, semantics: cap.semantics, terms: cap.terms },
         });
-        const res = await callCapability(endpoint, cap.id, { line_id: ticket.line_id, target_tariff_id: target });
+        const res = await callExternal(
+          auth.grant,
+          { partner_domain: ticket.operator_domain, agentEndpoint: endpoint, capabilityId: cap.id, outcome: cap.semantics.outcome },
+          { line_id: ticket.line_id, target_tariff_id: target },
+          { secret: resolverSecret(), onEvent: (ev) => { if (ev.step === "note") onLog({ channel: "http", text: ev.message }); } },
+        );
+        if (isRefused(res)) {
+          onLog({ channel: "resolver", text: `call_external refused: ${res.reason}`, data: res });
+          return { ok: false, reason: res.reason };
+        }
         const body = res.body as { ok?: boolean; to?: string; reason?: string };
         onLog({
           channel: "http",
@@ -496,7 +592,7 @@ export async function runOpsChatA2A(opts: {
     },
     system:
       `You are Globex operations' assistant for ticket ${ticket.id}: ${ticket.subscriber}, line ${ticket.line_id} on ${ticket.operator_name}, request "${ticket.request}". This is the AGENT-TO-AGENT flow. ` +
-      "You reach the operator's OWN agent for everything — you never drive a human portal. Process: " +
+      "You reach the operator's OWN agent for everything — you never drive a human portal. Two things govern any outward reach and you do not decide them yourself: Globex's own policy resolver clears WHETHER you may reach this partner and issues a short-lived scoped grant (your outward calls carry it and are refused without it), and a Globex manager makes the human decision on WHICH tariff. Process: " +
       "(1) query_available_tariffs to fetch the options from the operator; (2) escalate_to_manager with those options for the manager to choose and approve or reject; (3) once approved, on the operator's go-ahead, apply_change to perform the manager's chosen tariff agent-to-agent, which closes the ticket. " +
       "Never apply a change the manager hasn't approved. Keep replies short and plain. " +
       statusLine,
@@ -505,6 +601,9 @@ export async function runOpsChatA2A(opts: {
     onEvent: agentEvents(onLog),
     maxSteps: 8,
   });
+
+  await dirMcp.close();
+  await resolverMcp.close();
 }
 
 /* --------------------------------------------------------------- resolve --- */

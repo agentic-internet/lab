@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export type Channel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel" | "boundary" | "reason" | "hook";
+export type Channel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel" | "boundary" | "reason" | "hook" | "resolver";
 export interface LogEntry {
   channel: Channel;
   text: string;
@@ -22,6 +22,7 @@ const CH: Record<Channel, { label: string; cls: string; icon: string }> = {
   boundary: { label: "boundary", cls: "text-orange-300 font-semibold", icon: "🚧" },
   reason: { label: "reasoning", cls: "text-indigo-300 italic", icon: "🧠" },
   hook: { label: "pre-tool", cls: "text-cyan-300", icon: "⚙️" },
+  resolver: { label: "resolver", cls: "text-amber-300 font-semibold", icon: "🛂" },
 };
 
 /** Read an NDJSON stream from a POST and push each parsed LogEntry to onEntry. */

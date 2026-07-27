@@ -1,4 +1,12 @@
-import { type Capability, type OrgManifest, OrgManifest as OrgManifestSchema, Capability as CapabilitySchema } from "@ail/shared";
+import {
+  type Capability,
+  type OrgManifest,
+  type Grant,
+  OrgManifest as OrgManifestSchema,
+  Capability as CapabilitySchema,
+  verifyGrant,
+  hostOf,
+} from "@ail/shared";
 import { WELL_KNOWN } from "@ail/capability-manifest";
 
 /**
@@ -107,6 +115,58 @@ export async function callCapability(
   const body = await res.json().catch(() => ({}));
   emit({ step: "note", message: `← ${res.status} ${JSON.stringify(body)}` });
   return { status: res.status, body };
+}
+
+/** What comes back when the client refuses to make an unauthorized call. */
+export interface Refused {
+  refused: true;
+  reason: string;
+}
+
+export function isRefused(x: unknown): x is Refused {
+  return typeof x === "object" && x !== null && (x as Refused).refused === true;
+}
+
+/**
+ * The ONLY outward-acting call an adopting agent gets. There is no generic
+ * "fetch any URL" — the enforcement lives here, in the provided client library
+ * (the notebook's decision: enforcement in the library, not a mandatory broker).
+ *
+ * It refuses BEFORE any network happens unless the grant is valid, unexpired,
+ * for THIS partner, and covers THIS outcome. No grant, no call.
+ */
+export async function callExternal(
+  grant: Grant | undefined,
+  target: {
+    /** The partner domain the resolver authorized (host-compared to the grant). */
+    partner_domain: string;
+    /** Where discovered capability calls are POSTed. */
+    agentEndpoint: string;
+    /** The discovered capability's id. */
+    capabilityId: string;
+    /** The capability's semantic outcome — matched against the grant's scopes. */
+    outcome: string;
+  },
+  input: Record<string, unknown>,
+  opts: { secret?: string; onEvent?: OnEvent } = {},
+): Promise<{ status: number; body: unknown } | Refused> {
+  const emit = opts.onEvent ?? (() => {});
+  const v = verifyGrant(grant, { secret: opts.secret });
+  if (!v.ok) {
+    emit({ step: "note", message: `call refused — ${v.reason}` });
+    return { refused: true, reason: v.reason! };
+  }
+  if (hostOf(grant!.partner_domain) !== hostOf(target.partner_domain)) {
+    const reason = `grant is for ${grant!.partner_domain}, not ${target.partner_domain}`;
+    emit({ step: "note", message: `call refused — ${reason}` });
+    return { refused: true, reason };
+  }
+  if (!grant!.scopes.includes(target.outcome)) {
+    const reason = `grant does not cover "${target.outcome}" (allows ${grant!.scopes.join(", ") || "nothing"})`;
+    emit({ step: "note", message: `call refused — ${reason}` });
+    return { refused: true, reason };
+  }
+  return callCapability(target.agentEndpoint, target.capabilityId, input, opts);
 }
 
 /** Rough meaning-based match: does this capability fit what the caller wants? */
