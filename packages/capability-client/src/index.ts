@@ -121,6 +121,9 @@ export async function callCapability(
 export interface Refused {
   refused: true;
   reason: string;
+  /** True when the refusal is a spend-cap breach — the resolver's limit, not a
+   *  missing/expired grant. The caller turns this into a request to a human. */
+  over_limit?: boolean;
 }
 
 export function isRefused(x: unknown): x is Refused {
@@ -146,6 +149,8 @@ export async function callExternal(
     capabilityId: string;
     /** The capability's semantic outcome — matched against the grant's scopes. */
     outcome: string;
+    /** The money this call would commit, checked against the grant's spend cap. */
+    amount_usd?: number;
   },
   input: Record<string, unknown>,
   opts: { secret?: string; onEvent?: OnEvent } = {},
@@ -165,6 +170,12 @@ export async function callExternal(
     const reason = `grant does not cover "${target.outcome}" (allows ${grant!.scopes.join(", ") || "nothing"})`;
     emit({ step: "note", message: `call refused — ${reason}` });
     return { refused: true, reason };
+  }
+  const cap = grant!.limits?.max_price_usd;
+  if (typeof cap === "number" && typeof target.amount_usd === "number" && target.amount_usd > cap) {
+    const reason = `$${target.amount_usd} exceeds the grant's spend cap of $${cap}`;
+    emit({ step: "note", message: `call refused — ${reason}` });
+    return { refused: true, reason, over_limit: true };
   }
   return callCapability(target.agentEndpoint, target.capabilityId, input, opts);
 }

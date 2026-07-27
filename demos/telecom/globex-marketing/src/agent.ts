@@ -328,7 +328,7 @@ export async function runOpsChatA2A(opts: {
   const dirMcp = await connectGlobexMcp();
   const resolverMcp = await connectGlobexResolver();
 
-  const s: { options?: TariffOption[]; endpoint?: string; caps?: Capability[]; grant?: Grant; gapChecked?: boolean } = {};
+  const s: { options?: TariffOption[]; endpoint?: string; caps?: Capability[]; grant?: Grant; gapChecked?: boolean; blockedOnHuman?: boolean } = {};
 
   // Action verbs that describe the OUTWARD action, matched against Globex's own
   // tool descriptions. If none of Globex's tools speak to changing a tariff, the
@@ -531,6 +531,8 @@ export async function runOpsChatA2A(opts: {
           onLog({ channel: "policy", text: "cannot apply — the manager approved but chose no tariff" });
           return { ok: false, reason: "no chosen tariff" };
         }
+        const chosen = (e.options ?? []).find((o) => o.id === target);
+        const amount_usd = chosen?.price_usd;
         const { endpoint, caps } = await discoverOperator();
         const cap = matchCapability(caps, { outcome: "tariff-change" })[0];
         if (!cap) return { ok: false, reason: "operator offers no change capability" };
@@ -541,11 +543,31 @@ export async function runOpsChatA2A(opts: {
         });
         const res = await callExternal(
           s.grant,
-          { partner_domain: ticket.operator_domain, agentEndpoint: endpoint, capabilityId: cap.id, outcome: cap.semantics.outcome },
+          { partner_domain: ticket.operator_domain, agentEndpoint: endpoint, capabilityId: cap.id, outcome: cap.semantics.outcome, amount_usd },
           { line_id: ticket.line_id, target_tariff_id: target },
           { secret: resolverSecret(), onEvent: (ev) => { if (ev.step === "note") onLog({ channel: "http", text: ev.message }); } },
         );
         if (isRefused(res)) {
+          if (res.over_limit) {
+            // "No" is not an error — it is the typed request to a human arriving:
+            // this change is within scope but over Globex's autonomous spend cap.
+            const typedRequest = {
+              type: "over_limit_approval",
+              need: "a human sign-off — the change exceeds Globex's autonomous spend cap",
+              line_id: ticket.line_id,
+              chosen_tariff: target,
+              amount_usd,
+              cap_usd: s.grant?.limits?.max_price_usd,
+              partner: ticket.operator_name,
+            };
+            s.blockedOnHuman = true;
+            onLog({
+              channel: "boundary",
+              text: `blocked on a human — ${res.reason}. Not performed agent-to-agent; raised as a typed request to a human (${typedRequest.type}).`,
+              data: typedRequest,
+            });
+            return { ok: false, requires_human: true, typed_request: typedRequest, reason: res.reason };
+          }
           onLog({ channel: "resolver", text: `call_external refused: ${res.reason}`, data: res });
           return { ok: false, reason: res.reason };
         }
@@ -571,6 +593,8 @@ export async function runOpsChatA2A(opts: {
       const last = [...ctx.messages].reverse().find((m) => m.role === "user")?.content ?? message;
       const current = getTicket(ticket.id);
       if (current?.status === "done") return { text: `Ticket ${ticket.id} is closed — the change is applied.` };
+      if (s.blockedOnHuman)
+        return { text: `I can't complete this one agent-to-agent — the chosen tariff is over Globex's autonomous spend cap, so it needs a human sign-off. I've raised it as a typed request.` };
       const esc = forTicket(ticket.id);
       const wantsApply = /\b(upgrade|apply|proceed|do it|change it|make the change|yükselt|uygula|geçir)\b/i.test(last);
       const wantsEscalate = /\b(escalate|manager|confirm|approval|onay|yönetici)\b/i.test(last);

@@ -69,6 +69,10 @@ check("callExternal refuses a mismatched partner", isRefused(wrongPartner), isRe
 const outOfScope = await callExternal(grant, { partner_domain: ACME, agentEndpoint: `${ACME}/agent`, capabilityId: "x", outcome: "delete-account" }, {}, { secret: resolverSecret() });
 check("callExternal refuses an out-of-scope outcome", isRefused(outOfScope), isRefused(outOfScope) ? outOfScope.reason : "");
 
+// 10) callExternal refuses a call over the grant's spend cap (marks over_limit).
+const overCap = await callExternal(grant, { partner_domain: ACME, agentEndpoint: `${ACME}/agent`, capabilityId: "telecom.line.tariff.change", outcome: "tariff-change", amount_usd: 9999 }, {}, { secret: resolverSecret() });
+check("callExternal refuses over the spend cap", isRefused(overCap) && overCap.over_limit === true, isRefused(overCap) ? overCap.reason : "");
+
 await resolver.close();
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"}: ${pass} passed, ${fail} failed`);
 process.exit(fail === 0 ? 0 : 1);

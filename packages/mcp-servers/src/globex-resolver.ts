@@ -31,9 +31,10 @@ const APPROVED: Record<string, PartnerPolicy> = {
   [hostOf(process.env.ACME_URL ?? "http://localhost:3001")]: {
     name: "Acme Telecom",
     // Globex is Acme's account holder — cleared to read options and change a
-    // tariff, capped so the agent can't move a line onto an unbounded plan.
+    // tariff, but only AUTONOMOUSLY up to a spend cap. A change above the cap is
+    // not refused outright — it needs a human sign-off (a request to a human).
     scopes: ["tariff-options", "tariff-change"],
-    limits: { max_price_usd: 60 },
+    limits: { max_price_usd: 50 },
   },
 };
 
