@@ -48,10 +48,7 @@ interface LinePlan {
 
 /** Rough intent read for the deterministic script: is the user asking to act? */
 function wantsUpgrade(text: string): boolean {
-  return (
-    /\b(upgrade|increase|bigger|more data|change|switch|raise|bump|yes|yeah|yep|sure|ok|okay|go ahead|proceed|do it|please)\b/i.test(text) ||
-    /(yüksel|art[ıi]r|değiştir|evet|olur|tamam|yap)/i.test(text)
-  );
+  return /\b(upgrade|increase|bigger|more data|change|switch|raise|bump|yes|yeah|yep|sure|ok|okay|go ahead|proceed|do it|please)\b/i.test(text);
 }
 
 export async function runIntake(opts: {
@@ -234,12 +231,12 @@ export async function runOpsChat(opts: {
         return { text: `Ticket ${ticket.id} is closed — nothing more to do.` };
       }
       const esc = forTicket(ticket.id);
-      const wantsClose = /\b(close|done|finished|complete|kapat|bitti|tamamla)\b/i.test(last);
+      const wantsClose = /\b(close|done|finished|complete)\b/i.test(last);
       if (wantsClose) {
         if (esc?.status === "approved") return { toolCall: { tool: "close_task", args: {} } };
         return { text: "I can't close this yet — it needs the manager's approval first." };
       }
-      const wantsInfo = /\b(package|plan|tariff|paket|current|data|minute|dakika|how much|ne kadar|hangi)\b/i.test(last);
+      const wantsInfo = /\b(package|plan|tariff|current|data|minute|how much)\b/i.test(last);
       if (wantsInfo) {
         if (!s.line) return { toolCall: { tool: "lookup_line", args: {} } };
         const c = s.line.current;
@@ -253,7 +250,7 @@ export async function runOpsChat(opts: {
           : " Shall I escalate the upgrade to a manager?";
         return { text: `${ticket.subscriber} is on ${plan}, line ${ticket.line_id}.${tail}` };
       }
-      if (!esc && /\b(escalate|manager|confirm|approve|onay|yönetici|yükselt)\b/i.test(last)) {
+      if (!esc && /\b(escalate|manager|confirm|approve)\b/i.test(last)) {
         return { toolCall: { tool: "escalate_to_manager", args: { reason: ticket.request } } };
       }
       if (!esc) {
@@ -596,9 +593,9 @@ export async function runOpsChatA2A(opts: {
       if (s.blockedOnHuman)
         return { text: `I can't complete this one agent-to-agent — the chosen tariff is over Globex's autonomous spend cap, so it needs a human sign-off. I've raised it as a typed request.` };
       const esc = forTicket(ticket.id);
-      const wantsApply = /\b(upgrade|apply|proceed|do it|change it|make the change|yükselt|uygula|geçir)\b/i.test(last);
-      const wantsEscalate = /\b(escalate|manager|confirm|approval|onay|yönetici)\b/i.test(last);
-      const wantsOptions = /\b(tariff|available|option|package|plan|paket|hangi|which|current)\b/i.test(last);
+      const wantsApply = /\b(upgrade|apply|proceed|do it|change it|make the change)\b/i.test(last);
+      const wantsEscalate = /\b(escalate|manager|confirm|approval)\b/i.test(last);
+      const wantsOptions = /\b(tariff|available|option|package|plan|which|current)\b/i.test(last);
       const reachingOut = wantsApply || wantsEscalate || wantsOptions;
       const grantValid = !!s.grant && s.grant.expires_at > Date.now() + 5000;
 
