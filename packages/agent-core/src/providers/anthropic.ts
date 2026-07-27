@@ -22,6 +22,10 @@ export function anthropicProvider(opts?: { model?: string; apiKey?: string }): L
         messages: ctx.messages.map(toAnthropicMessage),
       });
 
+      const text = res.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
       const toolUse = res.content.find((b) => b.type === "tool_use");
       if (toolUse && toolUse.type === "tool_use") {
         return {
@@ -30,12 +34,9 @@ export function anthropicProvider(opts?: { model?: string; apiKey?: string }): L
             tool: toolUse.name,
             args: (toolUse.input ?? {}) as Record<string, unknown>,
           },
+          text: text || undefined,
         };
       }
-      const text = res.content
-        .filter((b): b is Anthropic.TextBlock => b.type === "text")
-        .map((b) => b.text)
-        .join("");
       return { text };
     },
   };

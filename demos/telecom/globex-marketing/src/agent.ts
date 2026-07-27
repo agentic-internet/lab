@@ -13,7 +13,7 @@ import { createEscalation, forTicket, type TariffOption } from "./escalations";
  * Both emit one unified stream of typed log entries — what the log panel shows.
  */
 
-export type LogChannel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel" | "boundary";
+export type LogChannel = "user" | "agent" | "tool" | "mcp" | "http" | "policy" | "assistant" | "panel" | "boundary" | "reason" | "hook";
 export interface LogEntry {
   channel: LogChannel;
   text: string;
@@ -24,6 +24,13 @@ export type OnLog = (e: LogEntry) => void;
 function agentEvents(onLog: OnLog) {
   return (e: import("@ail/agent-core").AgentEvent) => {
     if (e.type === "user") onLog({ channel: "user", text: e.text });
+    if (e.type === "reasoning") onLog({ channel: "reason", text: e.text });
+    if (e.type === "pre-tool")
+      onLog({
+        channel: "hook",
+        text: `pre-tool-use: ${e.tool}(${JSON.stringify(e.args)}) — ${e.allowed ? "allowed" : "BLOCKED: " + (e.reason ?? "policy")}`,
+        data: { tool: e.tool, args: e.args, allowed: e.allowed, reason: e.reason },
+      });
     if (e.type === "tool-call") onLog({ channel: "tool", text: `${e.tool}(${JSON.stringify(e.args)})` });
     if (e.type === "tool-result") onLog({ channel: "tool", text: `${e.tool} -> ${JSON.stringify(e.result)}`, data: e.result });
     if (e.type === "assistant") onLog({ channel: "assistant", text: e.text });
@@ -270,6 +277,13 @@ export async function runOpsChat(opts: {
   await runAgent({
     provider,
     history: opts.history,
+    preToolUse: (tool) => {
+      if (tool === "close_task") {
+        const e = forTicket(ticket.id);
+        if (!e || e.status !== "approved") return { allow: false, reason: "manager approval required before closing" };
+        return { allow: true, reason: "manager-approved" };
+      }
+    },
     system:
       `You are Globex operations' assistant for ticket ${ticket.id}: ${ticket.subscriber}, line ${ticket.line_id} on ${ticket.operator_name}, request "${ticket.request}". ` +
       "You CANNOT change the operator's line yourself, and you must not contact the operator. The process is human-driven: " +
@@ -473,6 +487,13 @@ export async function runOpsChatA2A(opts: {
   await runAgent({
     provider,
     history: opts.history,
+    preToolUse: (tool) => {
+      if (tool === "apply_change") {
+        const e = forTicket(ticket.id);
+        if (!e || e.status !== "approved") return { allow: false, reason: "manager approval required before any change" };
+        return { allow: true, reason: `manager-approved${e.chosen_tariff_id ? " · " + e.chosen_tariff_id : ""}` };
+      }
+    },
     system:
       `You are Globex operations' assistant for ticket ${ticket.id}: ${ticket.subscriber}, line ${ticket.line_id} on ${ticket.operator_name}, request "${ticket.request}". This is the AGENT-TO-AGENT flow. ` +
       "You reach the operator's OWN agent for everything — you never drive a human portal. Process: " +

@@ -1,4 +1,4 @@
-import type { LLMProvider, Msg, OnAgentEvent, ToolDef, Turn, TurnContext } from "./types";
+import type { LLMProvider, Msg, OnAgentEvent, PreToolUse, ToolDef, Turn, TurnContext } from "./types";
 
 let seq = 0;
 const nextId = () => `call_${Date.now()}_${seq++}`;
@@ -15,6 +15,8 @@ export async function runAgent(opts: {
   message: string;
   /** Prior conversation turns (text only), so the agent has continuity. */
   history?: { role: "user" | "assistant"; text: string }[];
+  /** A gate run before each tool call — can block, and makes the check visible. */
+  preToolUse?: PreToolUse;
   onEvent?: OnAgentEvent;
   maxSteps?: number;
 }): Promise<string> {
@@ -36,9 +38,20 @@ export async function runAgent(opts: {
     if (turn.toolCall) {
       const id = turn.toolCall.id ?? nextId();
       const { tool, args } = turn.toolCall;
+      // The model's own reasoning that came alongside the tool call (live models).
+      if (turn.text?.trim()) emit({ type: "reasoning", text: turn.text.trim() });
+      // PreToolUse gate — visible, and can block.
+      const gate = opts.preToolUse?.(tool, args);
+      const allowed = gate ? gate.allow : true;
+      emit({ type: "pre-tool", tool, args, allowed, reason: gate?.reason });
       emit({ type: "tool-call", tool, args });
-      const def = opts.tools.find((t) => t.name === tool);
-      const result = def ? await def.run(args) : { error: `unknown tool ${tool}` };
+      let result: unknown;
+      if (!allowed) {
+        result = { blocked: true, reason: gate?.reason ?? "blocked by policy" };
+      } else {
+        const def = opts.tools.find((t) => t.name === tool);
+        result = def ? await def.run(args) : { error: `unknown tool ${tool}` };
+      }
       emit({ type: "tool-result", tool, result });
       messages.push({ role: "assistant", toolCall: { id, tool, args } });
       messages.push({ role: "tool", toolCallId: id, content: JSON.stringify(result) });

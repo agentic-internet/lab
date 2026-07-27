@@ -31,6 +31,7 @@ export function openAICompatibleProvider(opts: {
             tool: call.function.name,
             args: JSON.parse(call.function.arguments || "{}") as Record<string, unknown>,
           },
+          text: choice?.content ?? undefined,
         };
       }
       return { text: choice?.content ?? "" };

@@ -50,9 +50,21 @@ export interface LLMProvider {
 /** Everything that happens, in order — the log panel subscribes to this. */
 export type AgentEvent =
   | { type: "user"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "pre-tool"; tool: string; args: Record<string, unknown>; allowed: boolean; reason?: string }
   | { type: "tool-call"; tool: string; args: Record<string, unknown> }
   | { type: "tool-result"; tool: string; result: unknown }
   | { type: "assistant"; text: string }
   | { type: "note"; text: string };
 
 export type OnAgentEvent = (e: AgentEvent) => void;
+
+/**
+ * A gate that runs before every tool call — the "PreToolUse" hook. Return
+ * { allow:false, reason } to block a call (the model gets told, the tool doesn't
+ * run). Return nothing to allow. Lets a demo show/enforce a policy at the boundary.
+ */
+export type PreToolUse = (
+  tool: string,
+  args: Record<string, unknown>,
+) => { allow: boolean; reason?: string } | void;
