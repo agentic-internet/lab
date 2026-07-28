@@ -18,6 +18,21 @@ export default function Home() {
         <Inspector />
       </section>
 
+      <section className="why">
+        <h2>Why an inspector?</h2>
+        <p>
+          Publishing is just files on your own domain — so how do you know an agent can actually read them?
+          One missing field or wrong path and it silently breaks, and you only find out when someone&rsquo;s agent
+          fails. Paste your domain here and see exactly what an agent sees — the same way a feed validator or a
+          <span className="k"> robots.txt</span> tester lets you check your work before shipping.
+        </p>
+        <p>
+          It <b>stores nothing and lists no one.</b> It is not a directory and agents never query it to find
+          providers — that would be the central registry this whole idea avoids. Discovery stays decentralized;
+          this is only a mirror for checking your own file against the <span className="k">v0</span> shape.
+        </p>
+      </section>
+
       <section className="explain">
         <div className="grid">
           <div className="card">

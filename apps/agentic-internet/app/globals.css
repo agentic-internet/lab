@@ -111,6 +111,12 @@ h1 { margin: 0 0 18px; font-size: clamp(30px, 5.4vw, 46px); font-weight: 800; le
 footer { border-top: 1px solid var(--hair); padding: 28px 0 60px; color: var(--faint); font-size: 13px; }
 footer a { color: var(--muted); }
 
+section.why { padding: 4px 0 26px; border-left: 2px solid var(--amber-dim); padding-left: 20px; margin: 4px 0 10px; }
+section.why h2 { margin: 0 0 10px; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+section.why p { margin: 0 0 12px; color: var(--muted); font-size: 15px; max-width: 66ch; }
+section.why p:last-child { margin-bottom: 0; }
+section.why b { color: var(--ink); font-weight: 600; }
+
 section.explain { padding: 6px 0 30px; display: grid; gap: 18px; }
 .explain .card { border: 1px solid var(--hair); border-radius: 12px; padding: 18px 20px; background: var(--raised); }
 .explain .card h3 { margin: 0 0 6px; font-size: 15px; }
