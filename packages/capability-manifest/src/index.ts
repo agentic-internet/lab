@@ -1,4 +1,9 @@
+import { z } from "zod";
 import { type Capability, type OrgManifest, OrgManifest as OrgManifestSchema, Capability as CapabilitySchema } from "@ail/shared";
+
+/** Loose input shapes: fields with a schema default may be omitted by a publisher. */
+type ManifestInput = z.input<typeof OrgManifestSchema>;
+type CapabilityInput = z.input<typeof CapabilitySchema>;
 
 /**
  * The producer side: how an organization publishes what it can do.
@@ -13,8 +18,8 @@ import { type Capability, type OrgManifest, OrgManifest as OrgManifestSchema, Ca
  */
 
 export interface ManifestSources {
-  manifest: OrgManifest;
-  capabilities: Capability[];
+  manifest: ManifestInput;
+  capabilities: CapabilityInput[];
 }
 
 /** The `Agent:` line for robots.txt (alongside Sitemap:). */
@@ -37,17 +42,17 @@ export function buildRobotsTxt(opts: {
 }
 
 /** Validate + return the org manifest (served at /.well-known/agent). */
-export function buildManifest(manifest: OrgManifest): OrgManifest {
+export function buildManifest(manifest: ManifestInput): OrgManifest {
   return OrgManifestSchema.parse(manifest);
 }
 
 /** Validate + return a capability (served at /.well-known/agent/capabilities/<id>). */
-export function buildCapability(capability: Capability): Capability {
+export function buildCapability(capability: CapabilityInput): Capability {
   return CapabilitySchema.parse(capability);
 }
 
 /** Convenience: validate a whole set at once. */
-export function buildAll(sources: ManifestSources): ManifestSources {
+export function buildAll(sources: ManifestSources): { manifest: OrgManifest; capabilities: Capability[] } {
   return {
     manifest: buildManifest(sources.manifest),
     capabilities: sources.capabilities.map(buildCapability),

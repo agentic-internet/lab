@@ -8,7 +8,21 @@ import { z } from "zod";
  * what-an-organization-might-publish.md). Producer (an organization publishing
  * /.well-known/agent) and consumer (an agent discovering it) both import THIS,
  * so there is one source of truth for the shape.
+ *
+ * ── SPEC STATUS: v0 · UNSTABLE ──────────────────────────────────────────────
+ * This is a reference shape, not a standard. It exists so two independent
+ * parties can interoperate at all — you can't discover-and-call over *nothing*.
+ * It is deliberately small and deliberately provisional: expect field names and
+ * requirements to change as real use reveals what's wrong. A published file
+ * declares which version it follows via `spec_version`, so the shape can evolve
+ * without silently breaking anyone. The philosophy stays loose; only this thin
+ * envelope is pinned, and the semantics inside stay natural-language so a model
+ * bridges meaning without a global vocabulary.
  */
+
+/** The convention version this contract implements. Bump it when the shape
+ *  changes; published files carry it so consumers can adapt. v0 = unstable. */
+export const SPEC_VERSION = "0.1" as const;
 
 /** How you actually reach a capability today. Anything that already exists. */
 export const InteractionType = z.enum([
@@ -96,6 +110,10 @@ export type Capability = z.infer<typeof Capability>;
  * Small, cacheable, points at capability detail rather than inlining it.
  */
 export const OrgManifest = z.object({
+  /** Which version of the agentic-internet convention this file follows.
+   *  v0 — deliberately unstable; expect it to change as real use shapes it. */
+  spec_version: z.string().default(SPEC_VERSION),
+  /** The organization's own revision of this manifest (their bookkeeping). */
   version: z.string().default("0.1"),
   organization: z.object({
     name: z.string(),
