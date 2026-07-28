@@ -36,10 +36,12 @@ export function makeTariff(n: number): Tariff {
   };
 }
 
-/** Seed: five tariffs, with the line sitting on the middle one (PKC-03). */
-export const SEED_TARIFFS: Tariff[] = [1, 2, 3, 4, 5].map(makeTariff);
+/** Seed: eight tariffs ($15–$85), with the line sitting low (PKC-03) so there is
+ *  real headroom to upgrade — including options above the resolver's spend cap,
+ *  which is what surfaces the "over the cap → request to a human" path. */
+export const SEED_TARIFFS: Tariff[] = [1, 2, 3, 4, 5, 6, 7, 8].map(makeTariff);
 
-/** The line always starts centred on the ladder. */
+/** The line starts low on the ladder, with room to move up. */
 export const SEED_ACTIVE_TARIFF = "PKC-03";
 
 /** The capabilities Acme publishes. Local ids — meaning-based matching does the work. */

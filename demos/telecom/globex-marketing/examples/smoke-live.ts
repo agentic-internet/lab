@@ -14,7 +14,7 @@ import { createTicket, getTicket, reset as resetTickets } from "../src/tickets";
 import { forTicket, decideEscalation, reset as resetEsc, type TariffOption } from "../src/escalations";
 
 const ACME = process.env.ACME_URL ?? "http://localhost:3001";
-const CAP = 50;
+const CAP = 80;
 const MODEL = process.env.SMOKE_MODEL ?? "claude-haiku-4-5";
 if (!process.env.ANTHROPIC_API_KEY) {
   console.error("ANTHROPIC_API_KEY is not set — this test needs a real key.");

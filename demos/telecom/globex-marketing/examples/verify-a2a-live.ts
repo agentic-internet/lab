@@ -13,7 +13,7 @@ import { createTicket, getTicket, reset as resetTickets } from "../src/tickets";
 import { forTicket, decideEscalation, reset as resetEsc, type TariffOption } from "../src/escalations";
 
 const ACME = process.env.ACME_URL ?? "http://localhost:3001";
-const CAP = 50; // must match the resolver's max_price_usd for Acme
+const CAP = 80; // must match the resolver's max_price_usd for Acme
 
 const icon: Record<string, string> = {
   user: "🧑", agent: "🤖", tool: "🔧", mcp: "🔌", http: "🌐", policy: "🛑",

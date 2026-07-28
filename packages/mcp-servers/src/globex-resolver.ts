@@ -34,7 +34,7 @@ const APPROVED: Record<string, PartnerPolicy> = {
     // tariff, but only AUTONOMOUSLY up to a spend cap. A change above the cap is
     // not refused outright — it needs a human sign-off (a request to a human).
     scopes: ["tariff-options", "tariff-change"],
-    limits: { max_price_usd: 50 },
+    limits: { max_price_usd: 80 },
   },
 };
 
